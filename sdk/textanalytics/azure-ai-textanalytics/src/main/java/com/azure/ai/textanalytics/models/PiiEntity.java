@@ -3,116 +3,148 @@
 
 package com.azure.ai.textanalytics.models;
 
-import com.azure.core.annotation.Immutable;
+import com.azure.ai.textanalytics.implementation.PiiEntityPropertiesHelper;
 
 /**
- * The Personally Identifiable Information entity model.
+ * The {@link PiiEntity} model.
  */
-@Immutable
 public final class PiiEntity {
     /*
-     * Personally Identifiable Information entity text as appears in the request.
+     * PiiEntity text as appears in the request.
      */
-    private final String text;
+    private String text;
 
     /*
-     * Personally Identifiable Information entity category, such as Person/Location/Org/SSN etc
+     * PiiEntity category, such as Person/Location/Org/SSN etc
      */
-    private final EntityCategory category;
+    private PiiEntityCategory category;
 
     /*
-     * Personally Identifiable Information entity sub category, such as Age/Year/TimeRange etc
+     * PiiEntity sub category, such as Medical/Stock exchange/Sports etc
      */
-    private final String subCategory;
-
-    /*
-     * Grapheme start position for the entity text.
-     */
-    private final int offset;
-
-    /*
-     * Grapheme length for the entity text.
-     */
-    private final int length;
+    private String subcategory;
 
     /*
      * Confidence score between 0 and 1 of the extracted entity.
      */
-    private final double confidenceScore;
+    private double confidenceScore;
 
-    /**
-     * Creates a Personally Identifiable Information entity model that describes entity.
-     *
-     * @param text Personally Identifiable Information entity text as appears in the request
-     * @param category Personally Identifiable Information entity category, such as Person/Location/Org/SSN etc
-     * @param subCategory Personally Identifiable Information entity sub category, such as Age/Year/TimeRange etc
-     * @param offset Grapheme start position for the entity text
-     * @param length Grapheme length for the entity text
-     * @param confidenceScore Confidence score between 0 and 1 of the extracted entity
+    /*
+     * Start position for the entity text.
      */
-    public PiiEntity(String text, EntityCategory category, String subCategory, int offset, int length,
-        double confidenceScore) {
-        this.text = text;
-        this.category = category;
-        this.subCategory = subCategory;
-        this.offset = offset;
-        this.length = length;
-        this.confidenceScore = confidenceScore;
+    private int offset;
+
+    private int length;
+
+    static {
+        PiiEntityPropertiesHelper.setAccessor(new PiiEntityPropertiesHelper.PiiEntityAccessor() {
+            @Override
+            public void setText(PiiEntity entity, String text) {
+                entity.setText(text);
+            }
+
+            @Override
+            public void setCategory(PiiEntity entity, PiiEntityCategory category) {
+                entity.setCategory(category);
+            }
+
+            @Override
+            public void setSubcategory(PiiEntity entity, String subcategory) {
+                entity.setSubcategory(subcategory);
+            }
+
+            @Override
+            public void setConfidenceScore(PiiEntity entity, double confidenceScore) {
+                entity.setConfidenceScore(confidenceScore);
+            }
+
+            @Override
+            public void setOffset(PiiEntity entity, int offset) {
+                entity.setOffset(offset);
+            }
+
+            @Override
+            public void setLength(PiiEntity entity, int length) {
+                entity.setLength(length);
+            }
+        });
     }
 
     /**
-     * Get the text property: Personally Identifiable Information entity text as appears in the request.
+     * Get the text property: PII entity text as appears in the request.
      *
-     * @return The text value.
+     * @return The {@code text} value.
      */
     public String getText() {
         return this.text;
     }
 
     /**
-     * Get the category property: Personally Identifiable Information entity category, such as
-     * Person/Location/Org/SSN etc.
+     * Get the category property: Categorized entity category, such as Person/Location/Org/SSN etc.
      *
-     * @return The category value.
+     * @return The {@code category} value.
      */
-    public EntityCategory getCategory() {
+    public PiiEntityCategory getCategory() {
         return this.category;
     }
 
     /**
-     * Get the subcategory property: Personally Identifiable Information entity sub category, such as
-     * Age/Year/TimeRange etc.
+     * Get the subcategory property: Categorized entity subcategory, such as Medical/Stock exchange/Sports etc.
      *
-     * @return The subcategory value.
+     * @return The {@code subcategory} value.
      */
-    public String getSubCategory() {
-        return this.subCategory;
+    public String getSubcategory() {
+        return this.subcategory;
     }
 
     /**
-     * Get the offset property: Grapheme start position for the entity text.
+     * Get the score property: Confidence score between 0 and 1 of the recognized entity.
      *
-     * @return The offset value.
+     * @return The {@code confidenceScore} value.
      */
-    public int getGraphemeOffset() {
+    public double getConfidenceScore() {
+        return this.confidenceScore;
+    }
+
+    /**
+     * Get the offset property: the start position for the entity text.
+     *
+     * @return The {@code offset} value.
+     */
+    public int getOffset() {
         return this.offset;
     }
 
     /**
-     * Get the length property: Grapheme length for the entity text.
+     * Get the length of entity text.
      *
-     * @return The length value.
+     * @return The length of entity text.
      */
-    public int getGraphemeLength() {
-        return this.length;
+    public int getLength() {
+        return length;
     }
 
-    /**
-     * Get the score property: Confidence score between 0 and 1 of the extracted entity.
-     *
-     * @return The score value.
-     */
-    public double getConfidenceScore() {
-        return this.confidenceScore;
+    private void setText(String text) {
+        this.text = text;
+    }
+
+    private void setCategory(PiiEntityCategory category) {
+        this.category = category;
+    }
+
+    private void setSubcategory(String subcategory) {
+        this.subcategory = subcategory;
+    }
+
+    private void setConfidenceScore(double confidenceScore) {
+        this.confidenceScore = confidenceScore;
+    }
+
+    private void setOffset(int offset) {
+        this.offset = offset;
+    }
+
+    private void setLength(int length) {
+        this.length = length;
     }
 }

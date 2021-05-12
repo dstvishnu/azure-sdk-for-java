@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 package com.azure.cosmos.implementation;
 
-import com.azure.cosmos.CosmosClientException;
+import com.azure.cosmos.CosmosException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -38,13 +38,18 @@ public class ClearingSessionContainerClientRetryPolicy extends DocumentClientRet
     }
 
     @Override
+    public RetryContext getRetryContext() {
+        return this.retryPolicy.getRetryContext();
+    }
+
+    @Override
     public Mono<ShouldRetryResult> shouldRetry(Exception e) {
 
         return this.retryPolicy.shouldRetry(e).flatMap(shouldRetryResult -> {
 
             if (!shouldRetryResult.shouldRetry && !this.hasTriggered)
             {
-                CosmosClientException clientException = Utils.as(e, CosmosClientException.class);
+                CosmosException clientException = Utils.as(e, CosmosException.class);
 
                 if (this.request == null) {
                     // someone didn't call OnBeforeSendRequest - nothing we can do

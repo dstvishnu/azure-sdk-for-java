@@ -49,7 +49,7 @@ interface KeyService {
                                           @PathParam("key-name") String keyName,
                                           @QueryParam("api-version") String apiVersion,
                                           @HeaderParam("accept-language") String acceptLanguage,
-                                          @BodyParam("body") KeyRequestParameters parameters,
+                                          @BodyParam("application/json") KeyRequestParameters parameters,
                                           @HeaderParam("Content-Type") String type,
                                           Context context);
 
@@ -85,10 +85,9 @@ interface KeyService {
                                           @PathParam("key-name") String keyName,
                                           @QueryParam("api-version") String apiVersion,
                                           @HeaderParam("accept-language") String acceptLanguage,
-                                          @BodyParam("body") KeyImportRequestParameters parameters,
+                                          @BodyParam("application/json") KeyImportRequestParameters parameters,
                                           @HeaderParam("Content-Type") String type,
                                           Context context);
-
 
     @Delete("keys/{key-name}")
     @ExpectedResponses({200})
@@ -109,12 +108,13 @@ interface KeyService {
                                           @PathParam("key-version") String keyVersion,
                                           @QueryParam("api-version") String apiVersion,
                                           @HeaderParam("accept-language") String acceptLanguage,
-                                          @BodyParam("body") KeyRequestParameters parameters,
+                                          @BodyParam("application/json") KeyRequestParameters parameters,
                                           @HeaderParam("Content-Type") String type,
                                           Context context);
 
     @Get("keys/{key-name}/versions")
     @ExpectedResponses({200})
+    @UnexpectedResponseExceptionType(code = {404}, value = ResourceNotFoundException.class)
     @UnexpectedResponseExceptionType(HttpResponseException.class)
     @ReturnValueWireType(KeyPropertiesPage.class)
     Mono<PagedResponse<KeyProperties>> getKeyVersions(@HostParam("url") String url,
@@ -143,7 +143,7 @@ interface KeyService {
     @UnexpectedResponseExceptionType(HttpResponseException.class)
     Mono<Response<KeyVaultKey>> restoreKey(@HostParam("url") String url,
                                            @QueryParam("api-version") String apiVersion,
-                                           @BodyParam("body") KeyRestoreRequestParameters parameters,
+                                           @BodyParam("application/json") KeyRestoreRequestParameters parameters,
                                            @HeaderParam("accept-language") String acceptLanguage,
                                            @HeaderParam("Content-Type") String type,
                                            Context context);

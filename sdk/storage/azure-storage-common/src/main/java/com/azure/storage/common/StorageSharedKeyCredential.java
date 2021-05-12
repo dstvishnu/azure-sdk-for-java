@@ -5,11 +5,15 @@ package com.azure.storage.common;
 
 import com.azure.core.http.HttpPipeline;
 import com.azure.core.http.policy.HttpPipelinePolicy;
+import com.azure.core.util.Context;
 import com.azure.core.util.CoreUtils;
 
+import com.azure.core.util.logging.ClientLogger;
+import com.azure.storage.common.implementation.Constants;
 import com.azure.storage.common.implementation.StorageImplUtils;
 import com.azure.storage.common.policy.StorageSharedKeyCredentialPolicy;
 import java.net.URL;
+import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -24,7 +28,10 @@ import java.util.stream.Collectors;
  * SharedKey credential policy that is put into a header to authorize requests.
  */
 public final class StorageSharedKeyCredential {
+    private final ClientLogger logger = new ClientLogger(StorageSharedKeyCredential.class);
+
     private static final String AUTHORIZATION_HEADER_FORMAT = "SharedKey %s:%s";
+    private static final Context LOG_STRING_TO_SIGN_CONTEXT = new Context(Constants.STORAGE_LOG_STRING_TO_SIGN, true);
 
     // Pieces of the connection string that are needed.
     private static final String ACCOUNT_NAME = "accountname";
@@ -92,8 +99,21 @@ public final class StorageSharedKeyCredential {
      * @return the SharedKey authorization value
      */
     public String generateAuthorizationHeader(URL requestURL, String httpMethod, Map<String, String> headers) {
+        return generateAuthorizationHeader(requestURL, httpMethod, headers, false);
+    }
+
+    /**
+     * Generates the SharedKey Authorization value from information in the request.
+     * @param requestURL URL of the request
+     * @param httpMethod HTTP method being used
+     * @param headers Headers on the request
+     * @param logStringToSign Whether or not to log the string to sign
+     * @return the SharedKey authorization value
+     */
+    public String generateAuthorizationHeader(URL requestURL, String httpMethod, Map<String, String> headers,
+        boolean logStringToSign) {
         String signature = StorageImplUtils.computeHMac256(accountKey,
-            buildStringToSign(requestURL, httpMethod, headers));
+            buildStringToSign(requestURL, httpMethod, headers, logStringToSign));
         return String.format(AUTHORIZATION_HEADER_FORMAT, accountName, signature);
     }
 
@@ -110,7 +130,8 @@ public final class StorageSharedKeyCredential {
         return StorageImplUtils.computeHMac256(accountKey, stringToSign);
     }
 
-    private String buildStringToSign(URL requestURL, String httpMethod, Map<String, String> headers) {
+    private String buildStringToSign(URL requestURL, String httpMethod, Map<String, String> headers,
+        boolean logStringToSign) {
         String contentLength = headers.get("Content-Length");
         contentLength = contentLength.equals("0") ? "" : contentLength;
 
@@ -118,7 +139,7 @@ public final class StorageSharedKeyCredential {
         String dateHeader = (headers.containsKey("x-ms-date")) ? ""
             : getStandardHeaderValue(headers, "Date");
 
-        return String.join("\n",
+        String stringToSign =  String.join("\n",
             httpMethod,
             getStandardHeaderValue(headers, "Content-Encoding"),
             getStandardHeaderValue(headers, "Content-Language"),
@@ -133,6 +154,12 @@ public final class StorageSharedKeyCredential {
             getStandardHeaderValue(headers, "Range"),
             getAdditionalXmsHeaders(headers),
             getCanonicalizedResource(requestURL));
+
+        if (logStringToSign) {
+            StorageImplUtils.logStringToSign(logger, stringToSign, LOG_STRING_TO_SIGN_CONTEXT);
+        }
+
+        return stringToSign;
     }
 
     /*
@@ -156,7 +183,8 @@ public final class StorageSharedKeyCredential {
             return "";
         }
 
-        Collections.sort(xmsHeaderNameArray);
+        /* Culture-sensitive word sort */
+        Collections.sort(xmsHeaderNameArray, Collator.getInstance(Locale.ROOT));
 
         final StringBuilder canonicalizedHeaders = new StringBuilder();
         for (final String key : xmsHeaderNameArray) {

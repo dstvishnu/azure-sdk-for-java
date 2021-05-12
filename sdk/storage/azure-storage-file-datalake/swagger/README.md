@@ -3,39 +3,36 @@
 > see https://aka.ms/autorest
 
 ### Setup
-```ps
-cd C:\work
-git clone --recursive https://github.com/Azure/autorest.java/
-cd autorest.java
-git checkout v3
-npm install
-cd ..
-git clone --recursive https://github.com/jianghaolu/autorest.modeler/
-cd autorest.modeler
-git checkout headerprefixfix
-npm install
-```
+
+> see https://github.com/Azure/autorest.java
 
 ### Generation
+> see https://github.com/Azure/autorest.java/releases for the latest version of autorest
 ```ps
 cd <swagger-folder>
-autorest --use=C:/work/autorest.java --use=C:/work/autorest.modeler --version=2.0.4280
+mvn install
+autorest --java --use:@autorest/java@4.0.x
 ```
 
 ### Code generation settings
 ``` yaml
-input-file: https://raw.githubusercontent.com/Azure/azure-rest-api-specs/storage-dataplane-preview/specification/storage/data-plane/Microsoft.StorageDataLake/stable/2018-11-09/DataLakeStorage.json
+input-file: https://raw.githubusercontent.com/Azure/azure-rest-api-specs/storage-dataplane-preview/specification/storage/data-plane/Microsoft.StorageDataLake/stable/2020-06-12/DataLakeStorage.json
 java: true
 output-folder: ../
 namespace: com.azure.storage.file.datalake
 enable-xml: true
+generate-client-as-impl: true
 generate-client-interfaces: false
+service-interface-as-public: true
 sync-methods: none
 license-header: MICROSOFT_MIT_SMALL
-add-context-parameter: true
+context-client-method-parameter: true
+optional-constant-as-enum: true
 models-subpackage: implementation.models
 custom-types: FileSystemInfo,FileSystemItem,FileSystemProperties,PathInfo,PathItem,PathProperties,ListFileSystemsOptions,PathHttpHeaders
 custom-types-subpackage: models
+customization-jar-path: target/azure-storage-file-datalake-customization-1.0.0-beta.1.jar
+customization-class: com.azure.storage.file.datalake.customization.DataLakeStorageCustomization
 ```
 
 ### Adds FileSystem parameter to /{filesystem}?resource=filesystem
@@ -96,6 +93,21 @@ directive:
     }
 ```
 
+### Adds FileSystem and Path parameter to /{filesystem}/{path}?action=setAccessControlRecursive
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{filesystem}/{path}?action=setAccessControlRecursive"].patch
+  transform: >
+    let param = $.parameters[0];
+    if (!param["$ref"].endsWith("FileSystem")) {
+        const fileSystemPath = param["$ref"].replace(/[#].*$/, "#/parameters/FileSystem");
+        const pathPath = param["$ref"].replace(/[#].*$/, "#/parameters/Path");
+        $.parameters.splice(0, 0, { "$ref": fileSystemPath });
+        $.parameters.splice(1, 0, { "$ref": pathPath });
+    }
+```
+
 ### Adds FileSystem and Path parameter to /{filesystem}/{path}?action=flush
 ``` yaml
 directive:
@@ -120,7 +132,20 @@ directive:
     $.patch.consumes = ["application/octet-stream"];
 ```
 
-
+### Adds FileSystem and Path parameter to /{filesystem}/{path}?comp=expiry
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{filesystem}/{path}?comp=expiry"].put
+  transform: >
+    let param = $.parameters[0];
+    if (!param["$ref"].endsWith("FileSystem")) {
+        const fileSystemPath = param["$ref"].replace(/[#].*$/, "#/parameters/FileSystem");
+        const pathPath = param["$ref"].replace(/[#].*$/, "#/parameters/Path");
+        $.parameters.splice(0, 0, { "$ref": fileSystemPath });
+        $.parameters.splice(1, 0, { "$ref": pathPath });
+    }
+```
 
 ### Make ACL on Path Get Properties lower case
 ``` yaml
@@ -157,47 +182,66 @@ directive:
     return $.replace('@JsonProperty(value = "eTag")\n    private String eTag;', '@JsonProperty(value = "etag")\n    private String eTag;');
 ```
 
-### Change StorageErrorException to StorageException
+### Delete FileSystem_ListPaths x-ms-pageable as autorest doesnt allow you to set the nextLinkName to be a header.
 ``` yaml
 directive:
-- from: ServicesImpl.java
-  where: $
+- from: swagger-document
+  where: $["x-ms-paths"]["/{filesystem}?resource=filesystem"].get
   transform: >
-    return $.
-      replace(
-        "com.azure.storage.file.datalake.implementation.models.StorageErrorException",
-        "com.azure.storage.file.datalake.models.DataLakeStorageException"
-      ).
-      replace(
-        /\@UnexpectedResponseExceptionType\(StorageErrorException\.class\)/g,
-        "@UnexpectedResponseExceptionType(DataLakeStorageException.class)"
-      );
-- from: FileSystemsImpl.java
-  where: $
-  transform: >
-    return $.
-      replace(
-        "com.azure.storage.file.datalake.implementation.models.StorageErrorException",
-        "com.azure.storage.file.datalake.models.DataLakeStorageException"
-      ).
-      replace(
-        /\@UnexpectedResponseExceptionType\(StorageErrorException\.class\)/g,
-        "@UnexpectedResponseExceptionType(DataLakeStorageException.class)"
-      );
-- from: PathsImpl.java
-  where: $
-  transform: >
-    return $.
-      replace(
-        "com.azure.storage.file.datalake.implementation.models.StorageErrorException",
-        "com.azure.storage.file.datalake.models.DataLakeStorageException"
-      ).
-      replace(
-        /\@UnexpectedResponseExceptionType\(StorageErrorException\.class\)/g,
-        "@UnexpectedResponseExceptionType(DataLakeStorageException.class)"
-      );
+    delete $["x-ms-pageable"];
 ```
 
+### Adds FileSystem parameter to /{filesystem}?restype=container&comp=list&hierarchy
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{filesystem}?restype=container&comp=list&hierarchy"]
+  transform: >
+    let param = $.get.parameters[0];
+    if (!param["$ref"].endsWith("FileSystem")) {
+        const path = param["$ref"].replace(/[#].*$/, "#/parameters/FileSystem");
+        $.get.parameters.splice(0, 0, { "$ref": path });
+    }
+```
+
+### Delete Container_ListBlobHierarchySegment x-ms-pageable as autorest can't recognize the itemName for this
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{filesystem}?restype=container&comp=list&hierarchy"].get
+  transform: >
+    delete $["x-ms-pageable"];
+```
+
+### ListBlobsHierarchySegmentResponse
+``` yaml
+directive:
+- from: swagger-document
+  where: $.definitions.ListBlobsHierarchySegmentResponse
+  transform: >
+    if (!$.required.includes("Prefix")) {
+      $.required.push("Prefix");
+      $.required.push("Marker");
+      $.required.push("MaxResults");
+      $.required.push("Delimiter");
+      $.required.push("NextMarker");
+    }
+```
+
+### Adds FileSystem and Path parameter to /{filesystem}/{path}?comp=undelete
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{filesystem}/{path}?comp=undelete"].put
+  transform: >
+    let param = $.parameters[0];
+    if (!param["$ref"].endsWith("FileSystem")) {
+        const fileSystemPath = param["$ref"].replace(/[#].*$/, "#/parameters/FileSystem");
+        const pathPath = param["$ref"].replace(/[#].*$/, "#/parameters/Path");
+        $.parameters.splice(0, 0, { "$ref": fileSystemPath });
+        $.parameters.splice(1, 0, { "$ref": pathPath });
+    }
+```
 
 ![Impressions](https://azure-sdk-impressions.azurewebsites.net/api/impressions/azure-sdk-for-java%2Fsdk%2Fstorage%2Fazure-storage-file-datalake%2Fswagger%2FREADME.png)
 

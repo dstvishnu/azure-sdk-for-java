@@ -2,15 +2,17 @@
 // Licensed under the MIT License.
 package com.azure.cosmos.implementation;
 
-import com.azure.cosmos.ConnectionPolicy;
+import com.azure.cosmos.BridgeInternal;
 import com.azure.cosmos.implementation.caches.RxClientCollectionCache;
 import com.azure.cosmos.implementation.directconnectivity.WFConstants;
+import com.azure.cosmos.models.ModelBridgeInternal;
 import io.netty.handler.timeout.ReadTimeoutException;
 import org.mockito.Mockito;
 import org.testng.annotations.Test;
 import reactor.core.publisher.Mono;
 
 import static com.azure.cosmos.implementation.ClientRetryPolicyTest.validateSuccess;
+import static com.azure.cosmos.implementation.TestUtils.mockDiagnosticsClientContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class RenameCollectionAwareClientRetryPolicyTest {
@@ -22,7 +24,7 @@ public class RenameCollectionAwareClientRetryPolicyTest {
         GlobalEndpointManager endpointManager = Mockito.mock(GlobalEndpointManager.class);
         Mockito.doReturn(Mono.empty()).when(endpointManager).refreshLocationAsync(Mockito.eq(null), Mockito.eq(false));
 
-        IRetryPolicyFactory retryPolicyFactory = new RetryPolicy(endpointManager, ConnectionPolicy.getDefaultPolicy());
+        IRetryPolicyFactory retryPolicyFactory = new RetryPolicy(mockDiagnosticsClientContext(), endpointManager, ConnectionPolicy.getDefaultPolicy());
         RxClientCollectionCache rxClientCollectionCache = Mockito.mock(RxClientCollectionCache.class);
 
         ISessionContainer sessionContainer = Mockito.mock(ISessionContainer.class);
@@ -32,11 +34,11 @@ public class RenameCollectionAwareClientRetryPolicyTest {
 
         Exception exception = ReadTimeoutException.INSTANCE;
 
-        RxDocumentServiceRequest dsr = RxDocumentServiceRequest.createFromName(
+        RxDocumentServiceRequest dsr = RxDocumentServiceRequest.createFromName(mockDiagnosticsClientContext(),
                 OperationType.Create, "/dbs/db/colls/col/docs/docId", ResourceType.Document);
         dsr.requestContext = Mockito.mock(DocumentServiceRequestContext.class);
 
-        Mono<IRetryPolicy.ShouldRetryResult> shouldRetry =
+        Mono<ShouldRetryResult> shouldRetry =
                 renameCollectionAwareClientRetryPolicy.shouldRetry(exception);
         validateSuccess(shouldRetry, ShouldRetryValidator.builder()
                 .withException(exception)
@@ -50,21 +52,21 @@ public class RenameCollectionAwareClientRetryPolicyTest {
     public void shouldRetryWithNotFoundStatusCode() {
         GlobalEndpointManager endpointManager = Mockito.mock(GlobalEndpointManager.class);
         Mockito.doReturn(Mono.empty()).when(endpointManager).refreshLocationAsync(Mockito.eq(null),Mockito.eq(false));
-        IRetryPolicyFactory retryPolicyFactory = new RetryPolicy(endpointManager, ConnectionPolicy.getDefaultPolicy());
+        IRetryPolicyFactory retryPolicyFactory = new RetryPolicy(mockDiagnosticsClientContext(), endpointManager, ConnectionPolicy.getDefaultPolicy());
         RxClientCollectionCache rxClientCollectionCache = Mockito.mock(RxClientCollectionCache.class);
 
         ISessionContainer sessionContainer = Mockito.mock(ISessionContainer.class);
         RenameCollectionAwareClientRetryPolicy renameCollectionAwareClientRetryPolicy = new RenameCollectionAwareClientRetryPolicy(sessionContainer
                 , rxClientCollectionCache
                 , retryPolicyFactory.getRequestPolicy());
-        RxDocumentServiceRequest request = RxDocumentServiceRequest.createFromName(
+        RxDocumentServiceRequest request = RxDocumentServiceRequest.createFromName(mockDiagnosticsClientContext(),
                 OperationType.Create, "/dbs/db/colls/col/docs/docId", ResourceType.Document);
         request.requestContext = Mockito.mock(DocumentServiceRequestContext.class);
         renameCollectionAwareClientRetryPolicy.onBeforeSendRequest(request);
 
         NotFoundException notFoundException = new NotFoundException();
 
-        Mono<IRetryPolicy.ShouldRetryResult> singleShouldRetry = renameCollectionAwareClientRetryPolicy
+        Mono<ShouldRetryResult> singleShouldRetry = renameCollectionAwareClientRetryPolicy
                 .shouldRetry(notFoundException);
         validateSuccess(singleShouldRetry, ShouldRetryValidator.builder()
                 .withException(notFoundException)
@@ -76,14 +78,14 @@ public class RenameCollectionAwareClientRetryPolicyTest {
     public void shouldRetryWithNotFoundStatusCodeAndReadSessionNotAvailableSubStatusCode() {
         GlobalEndpointManager endpointManager = Mockito.mock(GlobalEndpointManager.class);
         Mockito.doReturn(Mono.empty()).when(endpointManager).refreshLocationAsync(Mockito.eq(null), Mockito.eq(false));
-        IRetryPolicyFactory retryPolicyFactory = new RetryPolicy(endpointManager, ConnectionPolicy.getDefaultPolicy());
+        IRetryPolicyFactory retryPolicyFactory = new RetryPolicy(mockDiagnosticsClientContext(), endpointManager, ConnectionPolicy.getDefaultPolicy());
         RxClientCollectionCache rxClientCollectionCache = Mockito.mock(RxClientCollectionCache.class);
 
         ISessionContainer sessionContainer = Mockito.mock(ISessionContainer.class);
         RenameCollectionAwareClientRetryPolicy renameCollectionAwareClientRetryPolicy = new RenameCollectionAwareClientRetryPolicy(sessionContainer
                 , rxClientCollectionCache
                 , retryPolicyFactory.getRequestPolicy());
-        RxDocumentServiceRequest request = RxDocumentServiceRequest.createFromName(
+        RxDocumentServiceRequest request = RxDocumentServiceRequest.createFromName(mockDiagnosticsClientContext(),
                 OperationType.Create, "/dbs/db/colls/col/docs/docId", ResourceType.Document);
         request.requestContext = Mockito.mock(DocumentServiceRequestContext.class);
         request.requestContext.resolvedCollectionRid = "rid_0";
@@ -94,11 +96,11 @@ public class RenameCollectionAwareClientRetryPolicyTest {
                 Integer.toString(HttpConstants.SubStatusCodes.READ_SESSION_NOT_AVAILABLE));
 
         DocumentCollection documentCollection = new DocumentCollection();
-        documentCollection.setResourceId("rid_1");
+        ModelBridgeInternal.setResourceId(documentCollection, "rid_1");
 
-        Mockito.when(rxClientCollectionCache.resolveCollectionAsync(request)).thenReturn(Mono.just(new Utils.ValueHolder<>(documentCollection)));
+        Mockito.when(rxClientCollectionCache.resolveCollectionAsync(BridgeInternal.getMetaDataDiagnosticContext(request.requestContext.cosmosDiagnostics), request)).thenReturn(Mono.just(new Utils.ValueHolder<>(documentCollection)));
 
-        Mono<IRetryPolicy.ShouldRetryResult> singleShouldRetry = renameCollectionAwareClientRetryPolicy
+        Mono<ShouldRetryResult> singleShouldRetry = renameCollectionAwareClientRetryPolicy
                 .shouldRetry(notFoundException);
         validateSuccess(singleShouldRetry, ShouldRetryValidator.builder()
                 .nullException()
@@ -113,21 +115,21 @@ public class RenameCollectionAwareClientRetryPolicyTest {
     public void shouldRetryWithGenericException() {
         GlobalEndpointManager endpointManager = Mockito.mock(GlobalEndpointManager.class);
         Mockito.doReturn(Mono.empty()).when(endpointManager).refreshLocationAsync(Mockito.eq(null), Mockito.eq(false));
-        IRetryPolicyFactory retryPolicyFactory = new RetryPolicy(endpointManager, ConnectionPolicy.getDefaultPolicy());
+        IRetryPolicyFactory retryPolicyFactory = new RetryPolicy(mockDiagnosticsClientContext(), endpointManager, ConnectionPolicy.getDefaultPolicy());
         RxClientCollectionCache rxClientCollectionCache = Mockito.mock(RxClientCollectionCache.class);
 
         ISessionContainer sessionContainer = Mockito.mock(ISessionContainer.class);
         RenameCollectionAwareClientRetryPolicy renameCollectionAwareClientRetryPolicy = new RenameCollectionAwareClientRetryPolicy(sessionContainer
                 , rxClientCollectionCache
                 , retryPolicyFactory.getRequestPolicy());
-        RxDocumentServiceRequest request = RxDocumentServiceRequest.createFromName(
+        RxDocumentServiceRequest request = RxDocumentServiceRequest.createFromName(mockDiagnosticsClientContext(),
                 OperationType.Create, "/dbs/db/colls/col/docs/docId", ResourceType.Document);
         request.requestContext = Mockito.mock(DocumentServiceRequestContext.class);
         renameCollectionAwareClientRetryPolicy.onBeforeSendRequest(request);
 
-        Mono<IRetryPolicy.ShouldRetryResult> singleShouldRetry = renameCollectionAwareClientRetryPolicy
+        Mono<ShouldRetryResult> singleShouldRetry = renameCollectionAwareClientRetryPolicy
                 .shouldRetry(new BadRequestException());
-        IRetryPolicy.ShouldRetryResult shouldRetryResult = singleShouldRetry.block();
+        ShouldRetryResult shouldRetryResult = singleShouldRetry.block();
         assertThat(shouldRetryResult.shouldRetry).isFalse();
     }
 }

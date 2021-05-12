@@ -4,9 +4,19 @@ package com.azure.cosmos.implementation;
 
 import com.azure.cosmos.BridgeInternal;
 import com.azure.cosmos.models.CompositePath;
+import com.azure.cosmos.models.CosmosConflictProperties;
+import com.azure.cosmos.models.CosmosContainerProperties;
+import com.azure.cosmos.models.CosmosDatabaseProperties;
+import com.azure.cosmos.models.CosmosPermissionProperties;
+import com.azure.cosmos.models.CosmosStoredProcedureProperties;
+import com.azure.cosmos.models.CosmosTriggerProperties;
+import com.azure.cosmos.models.CosmosUserDefinedFunctionProperties;
+import com.azure.cosmos.models.CosmosUserProperties;
 import com.azure.cosmos.models.FeedResponse;
-import com.azure.cosmos.models.Resource;
+import com.azure.cosmos.models.ModelBridgeInternal;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -17,12 +27,12 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public interface FeedResponseListValidator<T extends Resource> {
+public interface FeedResponseListValidator<T> {
 
     void validate(List<FeedResponse<T>> feedList);
 
-    class Builder<T extends Resource> {
-        private List<FeedResponseListValidator<? extends Resource>> validators = new ArrayList<>();
+    class Builder<T> {
+        private List<FeedResponseListValidator<?>> validators = new ArrayList<>();
 
         public FeedResponseListValidator<T> build() {
             return new FeedResponseListValidator<T>() {
@@ -56,11 +66,26 @@ public interface FeedResponseListValidator<T extends Resource> {
                     List<String> actualIds = feedList
                             .stream()
                             .flatMap(f -> f.getResults().stream())
-                            .map(r -> r.getResourceId())
+                            .map(r -> getResource(r).getResourceId())
                             .collect(Collectors.toList());
                     assertThat(actualIds)
                     .describedAs("Resource IDs of results")
                     .containsExactlyElementsOf(expectedRids);
+                }
+            });
+            return this;
+        }
+
+        public Builder<T> containsExactlyValues(List<T> expectedValues) {
+            validators.add(new FeedResponseListValidator<T>() {
+                @Override
+                public void validate(List<FeedResponse<T>> feedList) {
+                    List<T> actualValues = feedList.stream()
+                                            .flatMap(f -> f.getResults().stream())
+                                            .collect(Collectors.toList());
+                    assertThat(actualValues)
+                        .describedAs("Result values")
+                        .containsExactlyElementsOf(expectedValues);
                 }
             });
             return this;
@@ -73,7 +98,7 @@ public interface FeedResponseListValidator<T extends Resource> {
                     List<String> actualIds = feedList
                             .stream()
                             .flatMap(f -> f.getResults().stream())
-                            .map(r -> r.getId())
+                            .map(r -> getResource(r).getId())
                             .collect(Collectors.toList());
                     assertThat(actualIds)
                     .describedAs("IDs of results")
@@ -93,7 +118,7 @@ public interface FeedResponseListValidator<T extends Resource> {
                             .collect(Collectors.toList());
 
                     for(T r: resources) {
-                        ResourceValidator<T> validator = resourceIDToValidator.get(r.getResourceId());
+                        ResourceValidator<T> validator = resourceIDToValidator.get(getResource(r).getResourceId());
                         assertThat(validator).isNotNull();
                         validator.validate(r);
                     }
@@ -109,11 +134,28 @@ public interface FeedResponseListValidator<T extends Resource> {
                     List<String> actualIds = feedList
                             .stream()
                             .flatMap(f -> f.getResults().stream())
-                            .map(Resource::getResourceId)
+                            .map(r -> getResource(r).getResourceId())
                             .collect(Collectors.toList());
                     assertThat(actualIds)
                     .describedAs("Resource IDs of results")
                     .containsOnlyElementsOf(expectedIds);
+                }
+            });
+            return this;
+        }
+
+        public Builder<T> exactlyContainsIdsInAnyOrder(List<String> expectedIds) {
+            validators.add(new FeedResponseListValidator<T>() {
+                @Override
+                public void validate(List<FeedResponse<T>> feedList) {
+                    List<String> actualIds = feedList
+                        .stream()
+                        .flatMap(f -> f.getResults().stream())
+                        .map(r -> getResource(r).getId())
+                        .collect(Collectors.toList());
+                    assertThat(actualIds)
+                        .describedAs("IDs of results")
+                        .containsOnlyElementsOf(expectedIds);
                 }
             });
             return this;
@@ -180,31 +222,31 @@ public interface FeedResponseListValidator<T extends Resource> {
         }
 
         public Builder<T> withAggregateValue(Object value) {
-            validators.add(new FeedResponseListValidator<CosmosItemProperties>() {
+            validators.add(new FeedResponseListValidator<JsonNode>() {
                 @Override
-                public void validate(List<FeedResponse<CosmosItemProperties>> feedList) {
-                    List<CosmosItemProperties> list = feedList.get(0).getResults();
-                    CosmosItemProperties result = list.size() > 0 ? list.get(0) : null;
+                public void validate(List<FeedResponse<JsonNode>> feedList) {
+                    List<JsonNode> list = feedList.get(0).getResults();
+                    JsonNode result = list.size() > 0 ? list.get(0) : null;
 
                     if (result != null) {
                         if (value instanceof Double) {
 
-                            Double d = result.getDouble(Constants.Properties.VALUE);
+                            Double d = result.asDouble();
                             assertThat(d).isEqualTo(value);
                         } else if (value instanceof Integer) {
 
-                            Integer d = result.getInt(Constants.Properties.VALUE);
+                            Integer d = result.asInt();
                             assertThat(d).isEqualTo(value);
                         } else if (value instanceof String) {
 
-                            String d = result.getString(Constants.Properties.VALUE);
+                            String d = result.asText();
                             assertThat(d).isEqualTo(value);
-                        } else if (value instanceof Document){
+                        } else if (value instanceof Document) {
 
                             assertThat(result.toString()).isEqualTo(value.toString());
                         } else {
 
-                            assertThat(result.get(Constants.Properties.VALUE)).isNull();
+                            assertThat(result.isNull()).isTrue();
                             assertThat(value).isNull();
                         }
                     } else {
@@ -217,15 +259,15 @@ public interface FeedResponseListValidator<T extends Resource> {
             return this;
         }
 
-        public Builder<T> withOrderedResults(List<CosmosItemProperties> expectedOrderedList,
+        public Builder<T> withOrderedResults(List<InternalObjectNode> expectedOrderedList,
                 List<CompositePath> compositeIndex) {
-            validators.add(new FeedResponseListValidator<CosmosItemProperties>() {
+            validators.add(new FeedResponseListValidator<InternalObjectNode>() {
                 @Override
-                public void validate(List<FeedResponse<CosmosItemProperties>> feedList) {
+                public void validate(List<FeedResponse<InternalObjectNode>> feedList) {
 
-                    List<CosmosItemProperties> resultOrderedList = feedList.stream()
-                            .flatMap(f -> f.getResults().stream())
-                            .collect(Collectors.toList());
+                    List<InternalObjectNode> resultOrderedList = feedList.stream()
+                                                                         .flatMap(f -> f.getResults().stream())
+                                                                         .collect(Collectors.toList());
                     assertThat(expectedOrderedList.size()).isEqualTo(resultOrderedList.size());
 
                     ArrayList<String> paths = new ArrayList<String>();
@@ -234,18 +276,20 @@ public interface FeedResponseListValidator<T extends Resource> {
                         paths.add(compositeIndexIterator.next().getPath().replace("/", ""));
                     }
                     for (int i = 0; i < resultOrderedList.size(); i ++) {
-                        ArrayNode resultValues = (ArrayNode) resultOrderedList.get(i).get("$1");
+                        ArrayNode resultValues = (ArrayNode) ModelBridgeInternal.getObjectFromJsonSerializable(resultOrderedList.get(i), "$1");
                         assertThat(resultValues.size()).isEqualTo(paths.size());
                         for (int j = 0; j < paths.size(); j++) {
                             if (paths.get(j).contains("number")) {
-                                assertThat(expectedOrderedList.get(i).getInt(paths.get(j))).isEqualTo(resultValues.get(j).intValue());
+                                assertThat(ModelBridgeInternal.getIntFromJsonSerializable(expectedOrderedList.get(i), paths.get(j)))
+                                    .isEqualTo(resultValues.get(j).intValue());
                             } else if (paths.get(j).toLowerCase().contains("string")) {
-                                assertThat(expectedOrderedList.get(i).getString(paths.get(j))).isEqualTo(resultValues.get(j).asText());
+                                assertThat(ModelBridgeInternal.getStringFromJsonSerializable(expectedOrderedList.get(i), paths.get(j)))
+                                    .isEqualTo(resultValues.get(j).asText());
                             } else if (paths.get(j).contains("bool")) {
-                                assertThat(expectedOrderedList.get(i).getBoolean(paths.get(j))).isEqualTo(resultValues.get(j).asBoolean());
+                                assertThat(ModelBridgeInternal.getBooleanFromJsonSerializable(expectedOrderedList.get(i), paths.get(j))).isEqualTo(resultValues.get(j).asBoolean());
                             } else {
                                 assertThat(resultValues.get(j).isNull()).isTrue();
-                                assertThat(expectedOrderedList.get(i).get("nullField")).isNull();
+                                assertThat(ModelBridgeInternal.getObjectFromJsonSerializable(expectedOrderedList.get(i), "nullField")).isNull();
                             }
                         }
                     }
@@ -268,12 +312,12 @@ public interface FeedResponseListValidator<T extends Resource> {
         }
 
         @SuppressWarnings("unchecked")
-        public Builder<T> hasValidQueryMetrics(boolean shouldHaveMetrics) {
+        public Builder<T> hasValidQueryMetrics(Boolean shouldHaveMetrics) {
             validators.add(new FeedResponseListValidator<T>() {
                 @Override
                 public void validate(List<FeedResponse<T>> feedList) {
                     for(FeedResponse<T> feedPage: feedList) {
-                        if (shouldHaveMetrics) {
+                        if (shouldHaveMetrics ==  null || shouldHaveMetrics) {
                             QueryMetrics queryMetrics = BridgeInternal.createQueryMetricsFromCollection(BridgeInternal.queryMetricsFromFeedResponse(feedPage).values());
                             assertThat(queryMetrics.getIndexHitDocumentCount()).isGreaterThanOrEqualTo(0);
                             assertThat(queryMetrics.getRetrievedDocumentSize()).isGreaterThanOrEqualTo(0);
@@ -295,6 +339,24 @@ public interface FeedResponseListValidator<T extends Resource> {
                 }
             });
             return this;
+        }
+
+        private <T> Resource getResource(T response) {
+            if (response instanceof Resource
+                || response instanceof CosmosConflictProperties
+                || response instanceof CosmosContainerProperties
+                || response instanceof CosmosDatabaseProperties
+                || response instanceof CosmosPermissionProperties
+                || response instanceof CosmosStoredProcedureProperties
+                || response instanceof CosmosTriggerProperties
+                || response instanceof CosmosUserDefinedFunctionProperties
+                || response instanceof CosmosUserProperties) {
+                return ModelBridgeInternal.getResource(response);
+            }
+            if (response instanceof ObjectNode) {
+                return new Document((ObjectNode)response);
+            }
+            return null;
         }
     }
 }

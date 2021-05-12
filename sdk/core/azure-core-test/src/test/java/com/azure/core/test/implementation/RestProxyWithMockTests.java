@@ -190,7 +190,7 @@ public class RestProxyWithMockTests extends RestProxyTests {
             new HttpPipelineBuilder().httpClient(new SimpleMockHttpClient() {
                 @Override
                 public Mono<HttpResponse> send(HttpRequest request) {
-                    HttpHeaders headers = new HttpHeaders().put("Content-Type", "application/json");
+                    HttpHeaders headers = new HttpHeaders().set("Content-Type", "application/json");
 
                     HttpResponse response = new MockHttpResponse(request, 200, headers,
                         "{ \"error\": \"Something went wrong, but at least this JSON is valid.\"}".getBytes(StandardCharsets.UTF_8));
@@ -213,7 +213,7 @@ public class RestProxyWithMockTests extends RestProxyTests {
             new HttpPipelineBuilder().httpClient(new SimpleMockHttpClient() {
                 @Override
                 public Mono<HttpResponse> send(HttpRequest request) {
-                    HttpHeaders headers = new HttpHeaders().put("Content-Type", "application/json");
+                    HttpHeaders headers = new HttpHeaders().set("Content-Type", "application/json");
 
                     HttpResponse response = new MockHttpResponse(request, 200, headers, "BAD JSON".getBytes(StandardCharsets.UTF_8));
                     return Mono.just(response);
@@ -236,7 +236,7 @@ public class RestProxyWithMockTests extends RestProxyTests {
             new HttpPipelineBuilder().httpClient(new SimpleMockHttpClient() {
                 @Override
                 public Mono<HttpResponse> send(HttpRequest request) {
-                    HttpHeaders headers = new HttpHeaders().put("Content-Type", "application/json; charset=UTF-8");
+                    HttpHeaders headers = new HttpHeaders().set("Content-Type", "application/json; charset=UTF-8");
 
                     HttpResponse response = new MockHttpResponse(request, 200, headers,
                         "{ \"error\": \"Something went wrong, but at least this JSON is valid.\"}".getBytes(StandardCharsets.UTF_8));
@@ -259,7 +259,7 @@ public class RestProxyWithMockTests extends RestProxyTests {
             new HttpPipelineBuilder().httpClient(new SimpleMockHttpClient() {
                 @Override
                 public Mono<HttpResponse> send(HttpRequest request) {
-                    HttpHeaders headers = new HttpHeaders().put("Content-Type", "application/json; charset=UTF-8");
+                    HttpHeaders headers = new HttpHeaders().set("Content-Type", "application/json; charset=UTF-8");
 
                     HttpResponse response = new MockHttpResponse(request, 200, headers, "BAD JSON".getBytes(StandardCharsets.UTF_8));
                     return Mono.just(response);
@@ -339,10 +339,11 @@ public class RestProxyWithMockTests extends RestProxyTests {
     private static final HttpClient HEADER_COLLECTION_HTTP_CLIENT = new NoOpHttpClient() {
         @Override
         public Mono<HttpResponse> send(HttpRequest request) {
-            final HttpHeaders headers = new HttpHeaders().put("name", "Phillip")
-                .put("header-collection-prefix-one", "1")
-                .put("header-collection-prefix-two", "2")
-                .put("header-collection-prefix-three", "3");
+            final HttpHeaders headers = new HttpHeaders()
+                .set("name", "Phillip")
+                .set("header-collection-prefix-one", "1")
+                .set("header-collection-prefix-two", "2")
+                .set("header-collection-prefix-three", "3");
             final MockHttpResponse response = new MockHttpResponse(request, 200, headers);
             return Mono.just(response);
         }
@@ -510,11 +511,11 @@ public class RestProxyWithMockTests extends RestProxyTests {
      * Non-conforming page because it does not implement the Page interface and instead of a Page.items(), has
      * badItems(), which would result in different JSON.
      */
-    static class NonComformingPage<T> {
+    static class NonConformingPage<T> {
         private List<T> badItems;
         private String continuationToken;
 
-        NonComformingPage(List<T> items, String continuationToken) {
+        NonConformingPage(List<T> items, String continuationToken) {
             this.badItems = items;
             this.continuationToken = continuationToken;
         }
@@ -546,7 +547,7 @@ public class RestProxyWithMockTests extends RestProxyTests {
         @ExpectedResponses({200})
         @ReturnValueWireType(Page.class)
         Mono<PagedResponse<KeyValue>> getPageAsyncSerializes(
-            @BodyParam(ContentType.APPLICATION_JSON) NonComformingPage<KeyValue> values);
+            @BodyParam(ContentType.APPLICATION_JSON) NonConformingPage<KeyValue> values);
     }
 
     /**
@@ -615,7 +616,7 @@ public class RestProxyWithMockTests extends RestProxyTests {
         array.add(key1);
         array.add(key2);
         array.add(key3);
-        NonComformingPage<KeyValue> page = new NonComformingPage<>(array, "A next link!");
+        NonConformingPage<KeyValue> page = new NonConformingPage<>(array, "A next link!");
 
         StepVerifier.create(createService(Service2.class).getPageAsyncSerializes(page))
             .assertNext(response -> {

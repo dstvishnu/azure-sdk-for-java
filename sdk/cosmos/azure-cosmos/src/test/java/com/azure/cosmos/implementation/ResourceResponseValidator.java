@@ -4,9 +4,8 @@ package com.azure.cosmos.implementation;
 
 import com.azure.cosmos.models.CompositePath;
 import com.azure.cosmos.models.IndexingMode;
-import com.azure.cosmos.models.Permission;
+import com.azure.cosmos.models.ModelBridgeInternal;
 import com.azure.cosmos.models.PermissionMode;
-import com.azure.cosmos.models.Resource;
 import com.azure.cosmos.models.SpatialSpec;
 import com.azure.cosmos.models.SpatialType;
 import com.azure.cosmos.models.TriggerOperation;
@@ -14,7 +13,6 @@ import com.azure.cosmos.models.TriggerType;
 import org.assertj.core.api.Condition;
 
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -77,7 +75,7 @@ public interface ResourceResponseValidator<T extends Resource> {
                 @Override
                 public void validate(ResourceResponse<T> resourceResponse) {
                     assertThat(resourceResponse.getResource()).isNotNull();
-                    assertThat(resourceResponse.getResource().get(propertyName)).is(validatingCondition);
+                    assertThat(ModelBridgeInternal.getObjectFromJsonSerializable(resourceResponse.getResource(), propertyName)).is(validatingCondition);
 
                 }
             });
@@ -90,7 +88,7 @@ public interface ResourceResponseValidator<T extends Resource> {
                 @Override
                 public void validate(ResourceResponse<T> resourceResponse) {
                     assertThat(resourceResponse.getResource()).isNotNull();
-                    assertThat(resourceResponse.getResource().get(propertyName)).isEqualTo(value);
+                    assertThat(ModelBridgeInternal.getObjectFromJsonSerializable(resourceResponse.getResource(), propertyName)).isEqualTo(value);
 
                 }
             });
@@ -105,9 +103,9 @@ public interface ResourceResponseValidator<T extends Resource> {
                 public void validate(ResourceResponse<T> resourceResponse) {
                     assertThat(resourceResponse.getResource()).isNotNull();
                     assertThat(resourceResponse.getResource().getTimestamp()).isNotNull();
-                    OffsetDateTime d = resourceResponse.getResource().getTimestamp();
+                    Instant d = resourceResponse.getResource().getTimestamp();
                     System.out.println(d.toString());
-                    assertThat(d.toInstant()).isAfterOrEqualTo(time);
+                    assertThat(d).isAfterOrEqualTo(time);
                 }
             });
             return this;
@@ -120,8 +118,8 @@ public interface ResourceResponseValidator<T extends Resource> {
                 public void validate(ResourceResponse<T> resourceResponse) {
                     assertThat(resourceResponse.getResource()).isNotNull();
                     assertThat(resourceResponse.getResource().getTimestamp()).isNotNull();
-                    OffsetDateTime d = resourceResponse.getResource().getTimestamp();
-                    assertThat(d.toInstant()).isBeforeOrEqualTo(time);
+                    Instant d = resourceResponse.getResource().getTimestamp();
+                    assertThat(d).isBeforeOrEqualTo(time);
                 }
             });
             return this;
@@ -250,7 +248,7 @@ public interface ResourceResponseValidator<T extends Resource> {
                 @Override
                 public void validate(ResourceResponse<T> resourceResponse) {
                     assertThat(resourceResponse.getResource()).isNotNull();
-                    assertThat(resourceResponse.getResource().get(key)).is(condition);
+                    assertThat(ModelBridgeInternal.getObjectFromJsonSerializable(resourceResponse.getResource(), key)).is(condition);
 
                 }
             });

@@ -8,204 +8,161 @@
 
 package com.microsoft.azure.cognitiveservices.vision.computervision;
 
-import com.microsoft.azure.CloudException;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.ReadInStreamOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.TagImageInStreamOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.RecognizePrintedTextInStreamOptionalParameter;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.AnalyzeImageByDomainInStreamOptionalParameter;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.AnalyzeImageByDomainOptionalParameter;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.AnalyzeImageInStreamOptionalParameter;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.AnalyzeImageOptionalParameter;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.AreaOfInterestResult;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.ComputerVisionErrorException;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.GenerateThumbnailInStreamOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.DetectObjectsInStreamOptionalParameter;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.DescribeImageInStreamOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.GetAreaOfInterestInStreamOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.AnalyzeImageInStreamOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.ReadOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.GetAreaOfInterestOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.GenerateThumbnailOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.TagImageOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.RecognizePrintedTextOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.AnalyzeImageByDomainOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.DetectObjectsOptionalParameter;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.DescribeImageOptionalParameter;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.AnalyzeImageOptionalParameter;
+import com.microsoft.azure.CloudException;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.AreaOfInterestResult;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.ComputerVisionErrorResponseException;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.ComputerVisionOcrErrorException;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.DescriptionExclude;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.Details;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.DetectResult;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.DomainModelResults;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.GenerateThumbnailInStreamOptionalParameter;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.GenerateThumbnailOptionalParameter;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.ImageAnalysis;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.ImageDescription;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.ListModelsResult;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.OcrDetectionLanguage;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.OcrLanguages;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.OcrResult;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.ReadHeaders;
+import com.microsoft.azure.cognitiveservices.vision.computervision.models.ReadInStreamHeaders;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.ReadOperationResult;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.RecognizePrintedTextInStreamOptionalParameter;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.RecognizePrintedTextOptionalParameter;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.TagImageInStreamOptionalParameter;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.TagImageOptionalParameter;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.TagResult;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.TextOperationResult;
-import com.microsoft.azure.cognitiveservices.vision.computervision.models.TextRecognitionMode;
 import com.microsoft.azure.cognitiveservices.vision.computervision.models.VisualFeatureTypes;
-import rx.Observable;
-
 import java.io.InputStream;
+import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
+import rx.Observable;
 
 /**
  * An instance of this class provides access to all the operations defined
  * in ComputerVision.
  */
 public interface ComputerVision {
-
     /**
-     * Use this interface to get the result of a Read Document operation, employing the state-of-the-art
-      *  Optical Character Recognition (OCR) algorithms optimized for text-heavy documents. When you use
-      *  the Read Document interface, the response contains a field called 'Operation-Location'. The
-      *  'Operation-Location' field contains the URL that you must use for your 'Get Read Result operation'
-      *  to access OCR results.
+     * Use this interface to get the result of a Read operation, employing the state-of-the-art Optical Character
+     *   Recognition (OCR) algorithms optimized for text-heavy documents. When you use the Read interface, the
+     *   response contains a field called 'Operation-Location'. The 'Operation-Location' field contains the URL that
+     *   you must use for your 'GetReadResult' operation to access OCR results.​.
      *
      * @param image An image stream.
+     * @param readInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionOcrErrorException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      */
-    void batchReadFileInStream(byte[] image);
+    void readInStream(byte[] image, ReadInStreamOptionalParameter readInStreamOptionalParameter);
 
     /**
-     * Use this interface to get the result of a Read Document operation, employing the state-of-the-art
-      *  Optical Character Recognition (OCR) algorithms optimized for text-heavy documents. When you use
-      *  the Read Document interface, the response contains a field called 'Operation-Location'. The
-      *  'Operation-Location' field contains the URL that you must use for your 'Get Read Result operation'
-      *  to access OCR results.
+     * Use this interface to get the result of a Read operation, employing the state-of-the-art Optical Character
+     *   Recognition (OCR) algorithms optimized for text-heavy documents. When you use the Read interface, the
+     *   response contains a field called 'Operation-Location'. The 'Operation-Location' field contains the URL that
+     *   you must use for your 'GetReadResult' operation to access OCR results.​.
      *
      * @param image An image stream.
+     * @param readInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return a representation of the deferred computation of this call if successful.
      */
-    Observable<Void> batchReadFileInStreamAsync(byte[] image);
-
-
+    Observable<Void> readInStreamAsync(byte[] image, ReadInStreamOptionalParameter readInStreamOptionalParameter);
 
     /**
-     * Recognize Text operation. When you use the Recognize Text interface, the response contains a field
-      *  called 'Operation-Location'. The 'Operation-Location' field contains the URL that you must use for
-      *  your Get Recognize Text Operation Result operation.
+     * Use this interface to get the result of a Read operation, employing the state-of-the-art Optical Character
+     *   Recognition (OCR) algorithms optimized for text-heavy documents. When you use the Read interface, the
+     *   response contains a field called 'Operation-Location'. The 'Operation-Location' field contains the URL that
+     *   you must use for your 'GetReadResult' operation to access OCR results.​.
      *
-     * @param image An image stream.
-     * @param mode Type of text to recognize. Possible values include: 'Handwritten', 'Printed'.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
-     * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
+     * @return the first stage of the readInStream call
      */
-    void recognizeTextInStream(byte[] image, TextRecognitionMode mode);
+    ComputerVisionReadInStreamDefinitionStages.WithImage readInStream();
 
     /**
-     * Recognize Text operation. When you use the Recognize Text interface, the response contains a field
-      *  called 'Operation-Location'. The 'Operation-Location' field contains the URL that you must use for
-      *  your Get Recognize Text Operation Result operation.
-     *
-     * @param image An image stream.
-     * @param mode Type of text to recognize. Possible values include: 'Handwritten', 'Printed'.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @return a representation of the deferred computation of this call if successful.
+     * Grouping of readInStream definition stages.
      */
-    Observable<Void> recognizeTextInStreamAsync(byte[] image, TextRecognitionMode mode);
+    interface ComputerVisionReadInStreamDefinitionStages {
+        /**
+         * The stage of the definition to be specify image.
+         */
+        interface WithImage {
+            /**
+             * An image stream.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionReadInStreamDefinitionStages.WithExecute withImage(byte[] image);
+        }
 
+        /**
+         * The stage of the definition which allows for any other optional settings to be specified.
+         */
+        interface WithAllOptions {
+            /**
+             * The BCP-47 language code of the text in the document. Read supports auto language identification and
+             *   multi-language documents, so only provide a language code if you would like to force the document to be
+             *   processed in that specific language. See https://aka.ms/ocr-languages for list of supported languages.
+             *   Possible values include: 'af', 'ast', 'bi', 'br', 'ca', 'ceb', 'ch', 'co', 'crh', 'cs', 'csb', 'da', 'de',
+             *   'en', 'es', 'et', 'eu', 'fi', 'fil', 'fj', 'fr', 'fur', 'fy', 'ga', 'gd', 'gil', 'gl', 'gv', 'hni', 'hsb',
+             *   'ht', 'hu', 'ia', 'id', 'it', 'iu', 'ja', 'jv', 'kaa', 'kac', 'kea', 'kha', 'kl', 'ko', 'ku', 'kw', 'lb',
+             *   'ms', 'mww', 'nap', 'nl', 'no', 'oc', 'pl', 'pt', 'quc', 'rm', 'sco', 'sl', 'sq', 'sv', 'sw', 'tet', 'tr',
+             *   'tt', 'uz', 'vo', 'wae', 'yua', 'za', 'zh-Hans', 'zh-Hant', 'zu'.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionReadInStreamDefinitionStages.WithExecute withLanguage(OcrDetectionLanguage language);
 
+            /**
+             * Custom page numbers for multi-page documents(PDF/TIFF), input the number of the pages you want to get OCR
+             *   result. For a range of pages, use a hyphen. Separate each page or range with a comma.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionReadInStreamDefinitionStages.WithExecute withPages(List<String> pages);
+
+        }
+
+        /**
+         * The last stage of the definition which will make the operation call.
+        */
+        interface WithExecute extends ComputerVisionReadInStreamDefinitionStages.WithAllOptions {
+            /**
+             * Execute the request.
+             *
+             */
+            void execute();
+
+            /**
+             * Execute the request asynchronously.
+             *
+             * @return a representation of the deferred computation of this call if successful.
+             */
+            Observable<Void> executeAsync();
+        }
+    }
 
     /**
-     * This interface is used for getting OCR results of Read operation. The URL to this interface should
-      *  be retrieved from 'Operation-Location' field returned from Batch Read File interface.
-     *
-     * @param operationId Id of read operation returned in the response of the 'Batch Read File' interface.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
-     * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
-     * @return the ReadOperationResult object if successful.
+     * The entirety of readInStream definition.
      */
-    ReadOperationResult getReadOperationResult(String operationId);
-
-    /**
-     * This interface is used for getting OCR results of Read operation. The URL to this interface should
-      *  be retrieved from 'Operation-Location' field returned from Batch Read File interface.
-     *
-     * @param operationId Id of read operation returned in the response of the 'Batch Read File' interface.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @return the observable to the ReadOperationResult object
-     */
-    Observable<ReadOperationResult> getReadOperationResultAsync(String operationId);
-
-
-
-    /**
-     * Use this interface to get the result of a Read operation, employing the state-of-the-art Optical
-      *  Character Recognition (OCR) algorithms optimized for text-heavy documents. When you use the Read
-      *  File interface, the response contains a field called 'Operation-Location'. The
-      *  'Operation-Location' field contains the URL that you must use for your 'GetReadOperationResult'
-      *  operation to access OCR results.
-     *
-     * @param url Publicly reachable URL of an image.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
-     * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
-     */
-    void batchReadFile(String url);
-
-    /**
-     * Use this interface to get the result of a Read operation, employing the state-of-the-art Optical
-      *  Character Recognition (OCR) algorithms optimized for text-heavy documents. When you use the Read
-      *  File interface, the response contains a field called 'Operation-Location'. The
-      *  'Operation-Location' field contains the URL that you must use for your 'GetReadOperationResult'
-      *  operation to access OCR results.
-     *
-     * @param url Publicly reachable URL of an image.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @return a representation of the deferred computation of this call if successful.
-     */
-    Observable<Void> batchReadFileAsync(String url);
-
-
-
-    /**
-     * This interface is used for getting text operation result. The URL to this interface should be
-      *  retrieved from 'Operation-Location' field returned from Recognize Text interface.
-     *
-     * @param operationId Id of the text operation returned in the response of the 'Recognize Text'.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
-     * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
-     * @return the TextOperationResult object if successful.
-     */
-    TextOperationResult getTextOperationResult(String operationId);
-
-    /**
-     * This interface is used for getting text operation result. The URL to this interface should be
-      *  retrieved from 'Operation-Location' field returned from Recognize Text interface.
-     *
-     * @param operationId Id of the text operation returned in the response of the 'Recognize Text'.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @return the observable to the TextOperationResult object
-     */
-    Observable<TextOperationResult> getTextOperationResultAsync(String operationId);
-
-
-
-    /**
-     * Recognize Text operation. When you use the Recognize Text interface, the response contains a field
-      *  called 'Operation-Location'. The 'Operation-Location' field contains the URL that you must use for
-      *  your Get Recognize Text Operation Result operation.
-     *
-     * @param mode Type of text to recognize. Possible values include: 'Handwritten', 'Printed'.
-     * @param url Publicly reachable URL of an image.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
-     * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
-     */
-    void recognizeText(String url, TextRecognitionMode mode);
-
-    /**
-     * Recognize Text operation. When you use the Recognize Text interface, the response contains a field
-      *  called 'Operation-Location'. The 'Operation-Location' field contains the URL that you must use for
-      *  your Get Recognize Text Operation Result operation.
-     *
-     * @param mode Type of text to recognize. Possible values include: 'Handwritten', 'Printed'.
-     * @param url Publicly reachable URL of an image.
-     * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @return a representation of the deferred computation of this call if successful.
-     */
-    Observable<Void> recognizeTextAsync(String url, TextRecognitionMode mode);
-
+    interface ComputerVisionReadInStreamDefinition extends
+        ComputerVisionReadInStreamDefinitionStages.WithImage,
+        ComputerVisionReadInStreamDefinitionStages.WithExecute {
+    }
 
     /**
      * This operation generates a list of words, or tags, that are relevant to the content of the supplied image.
@@ -220,11 +177,10 @@ public interface ComputerVision {
      * @param image An image stream.
      * @param tagImageInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the TagResult object if successful.
      */
-    @Deprecated
     TagResult tagImageInStream(byte[] image, TagImageInStreamOptionalParameter tagImageInStreamOptionalParameter);
 
     /**
@@ -242,7 +198,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the TagResult object
      */
-    @Deprecated
     Observable<TagResult> tagImageInStreamAsync(byte[] image, TagImageInStreamOptionalParameter tagImageInStreamOptionalParameter);
 
     /**
@@ -288,6 +243,14 @@ public interface ComputerVision {
              */
             ComputerVisionTagImageInStreamDefinitionStages.WithExecute withLanguage(String language);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionTagImageInStreamDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -331,11 +294,10 @@ public interface ComputerVision {
      * @param image An image stream.
      * @param recognizePrintedTextInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the OcrResult object if successful.
      */
-    @Deprecated
     OcrResult recognizePrintedTextInStream(boolean detectOrientation, byte[] image, RecognizePrintedTextInStreamOptionalParameter recognizePrintedTextInStreamOptionalParameter);
 
     /**
@@ -353,7 +315,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the OcrResult object
      */
-    @Deprecated
     Observable<OcrResult> recognizePrintedTextInStreamAsync(boolean detectOrientation, byte[] image, RecognizePrintedTextInStreamOptionalParameter recognizePrintedTextInStreamOptionalParameter);
 
     /**
@@ -409,6 +370,14 @@ public interface ComputerVision {
              */
             ComputerVisionRecognizePrintedTextInStreamDefinitionStages.WithExecute withLanguage(OcrLanguages language);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionRecognizePrintedTextInStreamDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -453,11 +422,10 @@ public interface ComputerVision {
      * @param image An image stream.
      * @param analyzeImageByDomainInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the DomainModelResults object if successful.
      */
-    @Deprecated
     DomainModelResults analyzeImageByDomainInStream(String model, byte[] image, AnalyzeImageByDomainInStreamOptionalParameter analyzeImageByDomainInStreamOptionalParameter);
 
     /**
@@ -475,7 +443,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the DomainModelResults object
      */
-    @Deprecated
     Observable<DomainModelResults> analyzeImageByDomainInStreamAsync(String model, byte[] image, AnalyzeImageByDomainInStreamOptionalParameter analyzeImageByDomainInStreamOptionalParameter);
 
     /**
@@ -531,6 +498,14 @@ public interface ComputerVision {
              */
             ComputerVisionAnalyzeImageByDomainInStreamDefinitionStages.WithExecute withLanguage(String language);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionAnalyzeImageByDomainInStreamDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -581,7 +556,6 @@ public interface ComputerVision {
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the InputStream object if successful.
      */
-    @Deprecated
     InputStream generateThumbnailInStream(int width, int height, byte[] image, GenerateThumbnailInStreamOptionalParameter generateThumbnailInStreamOptionalParameter);
 
     /**
@@ -601,7 +575,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the InputStream object
      */
-    @Deprecated
     Observable<InputStream> generateThumbnailInStreamAsync(int width, int height, byte[] image, GenerateThumbnailInStreamOptionalParameter generateThumbnailInStreamOptionalParameter);
 
     /**
@@ -667,6 +640,14 @@ public interface ComputerVision {
              */
             ComputerVisionGenerateThumbnailInStreamDefinitionStages.WithExecute withSmartCropping(Boolean smartCropping);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionGenerateThumbnailInStreamDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -699,33 +680,101 @@ public interface ComputerVision {
         ComputerVisionGenerateThumbnailInStreamDefinitionStages.WithExecute {
     }
 
-
     /**
      * Performs object detection on the specified image.
-      *  Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
-      *  A successful response will be returned in JSON. If the request failed, the response will contain
-      *  an error code and a message to help understand what went wrong.
+     *   Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
+     *   A successful response will be returned in JSON. If the request failed, the response will contain an error
+     *   code and a message to help understand what went wrong.
      *
      * @param image An image stream.
+     * @param detectObjectsInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the DetectResult object if successful.
      */
-    DetectResult detectObjectsInStream(byte[] image);
+    DetectResult detectObjectsInStream(byte[] image, DetectObjectsInStreamOptionalParameter detectObjectsInStreamOptionalParameter);
 
     /**
      * Performs object detection on the specified image.
-      *  Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
-      *  A successful response will be returned in JSON. If the request failed, the response will contain
-      *  an error code and a message to help understand what went wrong.
+     *   Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
+     *   A successful response will be returned in JSON. If the request failed, the response will contain an error
+     *   code and a message to help understand what went wrong.
      *
      * @param image An image stream.
+     * @param detectObjectsInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the DetectResult object
      */
-    Observable<DetectResult> detectObjectsInStreamAsync(byte[] image);
+    Observable<DetectResult> detectObjectsInStreamAsync(byte[] image, DetectObjectsInStreamOptionalParameter detectObjectsInStreamOptionalParameter);
 
+    /**
+     * Performs object detection on the specified image.
+     *   Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
+     *   A successful response will be returned in JSON. If the request failed, the response will contain an error
+     *   code and a message to help understand what went wrong.
+     *
+     * @return the first stage of the detectObjectsInStream call
+     */
+    ComputerVisionDetectObjectsInStreamDefinitionStages.WithImage detectObjectsInStream();
+
+    /**
+     * Grouping of detectObjectsInStream definition stages.
+     */
+    interface ComputerVisionDetectObjectsInStreamDefinitionStages {
+        /**
+         * The stage of the definition to be specify image.
+         */
+        interface WithImage {
+            /**
+             * An image stream.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionDetectObjectsInStreamDefinitionStages.WithExecute withImage(byte[] image);
+        }
+
+        /**
+         * The stage of the definition which allows for any other optional settings to be specified.
+         */
+        interface WithAllOptions {
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionDetectObjectsInStreamDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
+        }
+
+        /**
+         * The last stage of the definition which will make the operation call.
+        */
+        interface WithExecute extends ComputerVisionDetectObjectsInStreamDefinitionStages.WithAllOptions {
+            /**
+             * Execute the request.
+             *
+             * @return the DetectResult object if successful.
+             */
+            DetectResult execute();
+
+            /**
+             * Execute the request asynchronously.
+             *
+             * @return the observable to the DetectResult object
+             */
+            Observable<DetectResult> executeAsync();
+        }
+    }
+
+    /**
+     * The entirety of detectObjectsInStream definition.
+     */
+    interface ComputerVisionDetectObjectsInStreamDefinition extends
+        ComputerVisionDetectObjectsInStreamDefinitionStages.WithImage,
+        ComputerVisionDetectObjectsInStreamDefinitionStages.WithExecute {
+    }
 
     /**
      * This operation generates a description of an image in human readable language with complete sentences. The
@@ -739,11 +788,10 @@ public interface ComputerVision {
      * @param image An image stream.
      * @param describeImageInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the ImageDescription object if successful.
      */
-    @Deprecated
     ImageDescription describeImageInStream(byte[] image, DescribeImageInStreamOptionalParameter describeImageInStreamOptionalParameter);
 
     /**
@@ -760,7 +808,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the ImageDescription object
      */
-    @Deprecated
     Observable<ImageDescription> describeImageInStreamAsync(byte[] image, DescribeImageInStreamOptionalParameter describeImageInStreamOptionalParameter);
 
     /**
@@ -819,6 +866,14 @@ public interface ComputerVision {
              */
             ComputerVisionDescribeImageInStreamDefinitionStages.WithExecute withDescriptionExclude(List<DescriptionExclude> descriptionExclude);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionDescribeImageInStreamDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -849,37 +904,107 @@ public interface ComputerVision {
         ComputerVisionDescribeImageInStreamDefinitionStages.WithExecute {
     }
 
-
     /**
      * This operation returns a bounding box around the most important area of the image.
-      *  A successful response will be returned in JSON. If the request failed, the response contains an
-      *  error code and a message to help determine what went wrong.
-      *  Upon failure, the error code and an error message are returned. The error code could be one of
-      *  InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess,
-      *  Timeout, or InternalServerError.
+     *   A successful response will be returned in JSON. If the request failed, the response contains an error code
+     *   and a message to help determine what went wrong.
+     *   Upon failure, the error code and an error message are returned. The error code could be one of
+     *   InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess, Timeout, or
+     *   InternalServerError.
      *
      * @param image An image stream.
+     * @param getAreaOfInterestInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the AreaOfInterestResult object if successful.
      */
-    AreaOfInterestResult getAreaOfInterestInStream(byte[] image);
+    AreaOfInterestResult getAreaOfInterestInStream(byte[] image, GetAreaOfInterestInStreamOptionalParameter getAreaOfInterestInStreamOptionalParameter);
 
     /**
      * This operation returns a bounding box around the most important area of the image.
-      *  A successful response will be returned in JSON. If the request failed, the response contains an
-      *  error code and a message to help determine what went wrong.
-      *  Upon failure, the error code and an error message are returned. The error code could be one of
-      *  InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess,
-      *  Timeout, or InternalServerError.
+     *   A successful response will be returned in JSON. If the request failed, the response contains an error code
+     *   and a message to help determine what went wrong.
+     *   Upon failure, the error code and an error message are returned. The error code could be one of
+     *   InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess, Timeout, or
+     *   InternalServerError.
      *
      * @param image An image stream.
+     * @param getAreaOfInterestInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the AreaOfInterestResult object
      */
-    Observable<AreaOfInterestResult> getAreaOfInterestInStreamAsync(byte[] image);
+    Observable<AreaOfInterestResult> getAreaOfInterestInStreamAsync(byte[] image, GetAreaOfInterestInStreamOptionalParameter getAreaOfInterestInStreamOptionalParameter);
 
+    /**
+     * This operation returns a bounding box around the most important area of the image.
+     *   A successful response will be returned in JSON. If the request failed, the response contains an error code
+     *   and a message to help determine what went wrong.
+     *   Upon failure, the error code and an error message are returned. The error code could be one of
+     *   InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess, Timeout, or
+     *   InternalServerError.
+     *
+     * @return the first stage of the getAreaOfInterestInStream call
+     */
+    ComputerVisionGetAreaOfInterestInStreamDefinitionStages.WithImage getAreaOfInterestInStream();
+
+    /**
+     * Grouping of getAreaOfInterestInStream definition stages.
+     */
+    interface ComputerVisionGetAreaOfInterestInStreamDefinitionStages {
+        /**
+         * The stage of the definition to be specify image.
+         */
+        interface WithImage {
+            /**
+             * An image stream.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionGetAreaOfInterestInStreamDefinitionStages.WithExecute withImage(byte[] image);
+        }
+
+        /**
+         * The stage of the definition which allows for any other optional settings to be specified.
+         */
+        interface WithAllOptions {
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionGetAreaOfInterestInStreamDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
+        }
+
+        /**
+         * The last stage of the definition which will make the operation call.
+        */
+        interface WithExecute extends ComputerVisionGetAreaOfInterestInStreamDefinitionStages.WithAllOptions {
+            /**
+             * Execute the request.
+             *
+             * @return the AreaOfInterestResult object if successful.
+             */
+            AreaOfInterestResult execute();
+
+            /**
+             * Execute the request asynchronously.
+             *
+             * @return the observable to the AreaOfInterestResult object
+             */
+            Observable<AreaOfInterestResult> executeAsync();
+        }
+    }
+
+    /**
+     * The entirety of getAreaOfInterestInStream definition.
+     */
+    interface ComputerVisionGetAreaOfInterestInStreamDefinition extends
+        ComputerVisionGetAreaOfInterestInStreamDefinitionStages.WithImage,
+        ComputerVisionGetAreaOfInterestInStreamDefinitionStages.WithExecute {
+    }
 
     /**
      * This operation extracts a rich set of visual features based on the image content.
@@ -892,11 +1017,10 @@ public interface ComputerVision {
      * @param image An image stream.
      * @param analyzeImageInStreamOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the ImageAnalysis object if successful.
      */
-    @Deprecated
     ImageAnalysis analyzeImageInStream(byte[] image, AnalyzeImageInStreamOptionalParameter analyzeImageInStreamOptionalParameter);
 
     /**
@@ -912,7 +1036,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the ImageAnalysis object
      */
-    @Deprecated
     Observable<ImageAnalysis> analyzeImageInStreamAsync(byte[] image, AnalyzeImageInStreamOptionalParameter analyzeImageInStreamOptionalParameter);
 
     /**
@@ -989,6 +1112,14 @@ public interface ComputerVision {
              */
             ComputerVisionAnalyzeImageInStreamDefinitionStages.WithExecute withDescriptionExclude(List<DescriptionExclude> descriptionExclude);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionAnalyzeImageInStreamDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -1021,35 +1152,245 @@ public interface ComputerVision {
 
 
     /**
-     * This operation returns a bounding box around the most important area of the image.
-      *  A successful response will be returned in JSON. If the request failed, the response contains an
-      *  error code and a message to help determine what went wrong.
-      *  Upon failure, the error code and an error message are returned. The error code could be one of
-      *  InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess,
-      *  Timeout, or InternalServerError.
+     * This interface is used for getting OCR results of Read operation. The URL to this interface should
+      *  be retrieved from 'Operation-Location' field returned from Read interface.
+     *
+     * @param operationId Id of read operation returned in the response of the 'Read' interface.
+     * @throws IllegalArgumentException thrown if parameters fail the validation
+     * @throws ComputerVisionOcrErrorException thrown if the request is rejected by server
+     * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
+     * @return the ReadOperationResult object if successful.
+     */
+    ReadOperationResult getReadResult(UUID operationId);
+
+    /**
+     * This interface is used for getting OCR results of Read operation. The URL to this interface should
+      *  be retrieved from 'Operation-Location' field returned from Read interface.
+     *
+     * @param operationId Id of read operation returned in the response of the 'Read' interface.
+     * @throws IllegalArgumentException thrown if parameters fail the validation
+     * @return the observable to the ReadOperationResult object
+     */
+    Observable<ReadOperationResult> getReadResultAsync(UUID operationId);
+
+
+    /**
+     * Use this interface to get the result of a Read operation, employing the state-of-the-art Optical Character
+     *   Recognition (OCR) algorithms optimized for text-heavy documents. When you use the Read interface, the
+     *   response contains a field called 'Operation-Location'. The 'Operation-Location' field contains the URL that
+     *   you must use for your 'GetReadResult' operation to access OCR results.​.
      *
      * @param url Publicly reachable URL of an image.
+     * @param readOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionOcrErrorException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
-     * @return the AreaOfInterestResult object if successful.
      */
-    AreaOfInterestResult getAreaOfInterest(String url);
+    void read(String url, ReadOptionalParameter readOptionalParameter);
+
+    /**
+     * Use this interface to get the result of a Read operation, employing the state-of-the-art Optical Character
+     *   Recognition (OCR) algorithms optimized for text-heavy documents. When you use the Read interface, the
+     *   response contains a field called 'Operation-Location'. The 'Operation-Location' field contains the URL that
+     *   you must use for your 'GetReadResult' operation to access OCR results.​.
+     *
+     * @param url Publicly reachable URL of an image.
+     * @param readOptionalParameter the object representing the optional parameters to be set before calling this API
+     * @throws IllegalArgumentException thrown if parameters fail the validation
+     * @return a representation of the deferred computation of this call if successful.
+     */
+    Observable<Void> readAsync(String url, ReadOptionalParameter readOptionalParameter);
+
+    /**
+     * Use this interface to get the result of a Read operation, employing the state-of-the-art Optical Character
+     *   Recognition (OCR) algorithms optimized for text-heavy documents. When you use the Read interface, the
+     *   response contains a field called 'Operation-Location'. The 'Operation-Location' field contains the URL that
+     *   you must use for your 'GetReadResult' operation to access OCR results.​.
+     *
+     * @return the first stage of the read call
+     */
+    ComputerVisionReadDefinitionStages.WithUrl read();
+
+    /**
+     * Grouping of read definition stages.
+     */
+    interface ComputerVisionReadDefinitionStages {
+        /**
+         * The stage of the definition to be specify url.
+         */
+        interface WithUrl {
+            /**
+             * Publicly reachable URL of an image.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionReadDefinitionStages.WithExecute withUrl(String url);
+        }
+
+        /**
+         * The stage of the definition which allows for any other optional settings to be specified.
+         */
+        interface WithAllOptions {
+            /**
+             * The BCP-47 language code of the text in the document. Read supports auto language identification and
+             *   multi-language documents, so only provide a language code if you would like to force the document to be
+             *   processed in that specific language. See https://aka.ms/ocr-languages for list of supported languages.
+             *   Possible values include: 'af', 'ast', 'bi', 'br', 'ca', 'ceb', 'ch', 'co', 'crh', 'cs', 'csb', 'da', 'de',
+             *   'en', 'es', 'et', 'eu', 'fi', 'fil', 'fj', 'fr', 'fur', 'fy', 'ga', 'gd', 'gil', 'gl', 'gv', 'hni', 'hsb',
+             *   'ht', 'hu', 'ia', 'id', 'it', 'iu', 'ja', 'jv', 'kaa', 'kac', 'kea', 'kha', 'kl', 'ko', 'ku', 'kw', 'lb',
+             *   'ms', 'mww', 'nap', 'nl', 'no', 'oc', 'pl', 'pt', 'quc', 'rm', 'sco', 'sl', 'sq', 'sv', 'sw', 'tet', 'tr',
+             *   'tt', 'uz', 'vo', 'wae', 'yua', 'za', 'zh-Hans', 'zh-Hant', 'zu'.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionReadDefinitionStages.WithExecute withLanguage(OcrDetectionLanguage language);
+
+            /**
+             * Custom page numbers for multi-page documents(PDF/TIFF), input the number of the pages you want to get OCR
+             *   result. For a range of pages, use a hyphen. Separate each page or range with a comma.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionReadDefinitionStages.WithExecute withPages(List<String> pages);
+
+            /**
+             * Optional parameter to specify the version of the OCR model used for text extraction. Accepted values are:
+             *   "latest", "latest-preview", "2021-04-12". Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionReadDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
+        }
+
+        /**
+         * The last stage of the definition which will make the operation call.
+        */
+        interface WithExecute extends ComputerVisionReadDefinitionStages.WithAllOptions {
+            /**
+             * Execute the request.
+             *
+             */
+            void execute();
+
+            /**
+             * Execute the request asynchronously.
+             *
+             * @return a representation of the deferred computation of this call if successful.
+             */
+            Observable<Void> executeAsync();
+        }
+    }
+
+    /**
+     * The entirety of read definition.
+     */
+    interface ComputerVisionReadDefinition extends
+        ComputerVisionReadDefinitionStages.WithUrl,
+        ComputerVisionReadDefinitionStages.WithExecute {
+    }
 
     /**
      * This operation returns a bounding box around the most important area of the image.
-      *  A successful response will be returned in JSON. If the request failed, the response contains an
-      *  error code and a message to help determine what went wrong.
-      *  Upon failure, the error code and an error message are returned. The error code could be one of
-      *  InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess,
-      *  Timeout, or InternalServerError.
+     *   A successful response will be returned in JSON. If the request failed, the response contains an error code
+     *   and a message to help determine what went wrong.
+     *   Upon failure, the error code and an error message are returned. The error code could be one of
+     *   InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess, Timeout, or
+     *   InternalServerError.
      *
      * @param url Publicly reachable URL of an image.
+     * @param getAreaOfInterestOptionalParameter the object representing the optional parameters to be set before calling this API
+     * @throws IllegalArgumentException thrown if parameters fail the validation
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
+     * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
+     * @return the AreaOfInterestResult object if successful.
+     */
+    AreaOfInterestResult getAreaOfInterest(String url, GetAreaOfInterestOptionalParameter getAreaOfInterestOptionalParameter);
+
+    /**
+     * This operation returns a bounding box around the most important area of the image.
+     *   A successful response will be returned in JSON. If the request failed, the response contains an error code
+     *   and a message to help determine what went wrong.
+     *   Upon failure, the error code and an error message are returned. The error code could be one of
+     *   InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess, Timeout, or
+     *   InternalServerError.
+     *
+     * @param url Publicly reachable URL of an image.
+     * @param getAreaOfInterestOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the AreaOfInterestResult object
      */
-    Observable<AreaOfInterestResult> getAreaOfInterestAsync(String url);
+    Observable<AreaOfInterestResult> getAreaOfInterestAsync(String url, GetAreaOfInterestOptionalParameter getAreaOfInterestOptionalParameter);
 
+    /**
+     * This operation returns a bounding box around the most important area of the image.
+     *   A successful response will be returned in JSON. If the request failed, the response contains an error code
+     *   and a message to help determine what went wrong.
+     *   Upon failure, the error code and an error message are returned. The error code could be one of
+     *   InvalidImageUrl, InvalidImageFormat, InvalidImageSize, NotSupportedImage, FailedToProcess, Timeout, or
+     *   InternalServerError.
+     *
+     * @return the first stage of the getAreaOfInterest call
+     */
+    ComputerVisionGetAreaOfInterestDefinitionStages.WithUrl getAreaOfInterest();
+
+    /**
+     * Grouping of getAreaOfInterest definition stages.
+     */
+    interface ComputerVisionGetAreaOfInterestDefinitionStages {
+        /**
+         * The stage of the definition to be specify url.
+         */
+        interface WithUrl {
+            /**
+             * Publicly reachable URL of an image.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionGetAreaOfInterestDefinitionStages.WithExecute withUrl(String url);
+        }
+
+        /**
+         * The stage of the definition which allows for any other optional settings to be specified.
+         */
+        interface WithAllOptions {
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionGetAreaOfInterestDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
+        }
+
+        /**
+         * The last stage of the definition which will make the operation call.
+        */
+        interface WithExecute extends ComputerVisionGetAreaOfInterestDefinitionStages.WithAllOptions {
+            /**
+             * Execute the request.
+             *
+             * @return the AreaOfInterestResult object if successful.
+             */
+            AreaOfInterestResult execute();
+
+            /**
+             * Execute the request asynchronously.
+             *
+             * @return the observable to the AreaOfInterestResult object
+             */
+            Observable<AreaOfInterestResult> executeAsync();
+        }
+    }
+
+    /**
+     * The entirety of getAreaOfInterest definition.
+     */
+    interface ComputerVisionGetAreaOfInterestDefinition extends
+        ComputerVisionGetAreaOfInterestDefinitionStages.WithUrl,
+        ComputerVisionGetAreaOfInterestDefinitionStages.WithExecute {
+    }
 
     /**
      * This operation generates a thumbnail image with the user-specified width and height. By default, the service
@@ -1070,7 +1411,6 @@ public interface ComputerVision {
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the InputStream object if successful.
      */
-    @Deprecated
     InputStream generateThumbnail(int width, int height, String url, GenerateThumbnailOptionalParameter generateThumbnailOptionalParameter);
 
     /**
@@ -1090,7 +1430,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the InputStream object
      */
-    @Deprecated
     Observable<InputStream> generateThumbnailAsync(int width, int height, String url, GenerateThumbnailOptionalParameter generateThumbnailOptionalParameter);
 
     /**
@@ -1156,6 +1495,14 @@ public interface ComputerVision {
              */
             ComputerVisionGenerateThumbnailDefinitionStages.WithExecute withSmartCropping(Boolean smartCropping);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionGenerateThumbnailDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -1201,11 +1548,10 @@ public interface ComputerVision {
      * @param url Publicly reachable URL of an image.
      * @param tagImageOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the TagResult object if successful.
      */
-    @Deprecated
     TagResult tagImage(String url, TagImageOptionalParameter tagImageOptionalParameter);
 
     /**
@@ -1223,7 +1569,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the TagResult object
      */
-    @Deprecated
     Observable<TagResult> tagImageAsync(String url, TagImageOptionalParameter tagImageOptionalParameter);
 
     /**
@@ -1269,6 +1614,14 @@ public interface ComputerVision {
              */
             ComputerVisionTagImageDefinitionStages.WithExecute withLanguage(String language);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionTagImageDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -1312,11 +1665,10 @@ public interface ComputerVision {
      * @param url Publicly reachable URL of an image.
      * @param recognizePrintedTextOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the OcrResult object if successful.
      */
-    @Deprecated
     OcrResult recognizePrintedText(boolean detectOrientation, String url, RecognizePrintedTextOptionalParameter recognizePrintedTextOptionalParameter);
 
     /**
@@ -1334,7 +1686,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the OcrResult object
      */
-    @Deprecated
     Observable<OcrResult> recognizePrintedTextAsync(boolean detectOrientation, String url, RecognizePrintedTextOptionalParameter recognizePrintedTextOptionalParameter);
 
     /**
@@ -1390,6 +1741,14 @@ public interface ComputerVision {
              */
             ComputerVisionRecognizePrintedTextDefinitionStages.WithExecute withLanguage(OcrLanguages language);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionRecognizePrintedTextDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -1434,11 +1793,10 @@ public interface ComputerVision {
      * @param url Publicly reachable URL of an image.
      * @param analyzeImageByDomainOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the DomainModelResults object if successful.
      */
-    @Deprecated
     DomainModelResults analyzeImageByDomain(String model, String url, AnalyzeImageByDomainOptionalParameter analyzeImageByDomainOptionalParameter);
 
     /**
@@ -1456,7 +1814,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the DomainModelResults object
      */
-    @Deprecated
     Observable<DomainModelResults> analyzeImageByDomainAsync(String model, String url, AnalyzeImageByDomainOptionalParameter analyzeImageByDomainOptionalParameter);
 
     /**
@@ -1512,6 +1869,14 @@ public interface ComputerVision {
              */
             ComputerVisionAnalyzeImageByDomainDefinitionStages.WithExecute withLanguage(String language);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionAnalyzeImageByDomainDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -1552,7 +1917,7 @@ public interface ComputerVision {
       *  an error code and a message to help understand what went wrong.
      *
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the ListModelsResult object if successful.
      */
@@ -1571,33 +1936,101 @@ public interface ComputerVision {
     Observable<ListModelsResult> listModelsAsync();
 
 
-
     /**
      * Performs object detection on the specified image.
-      *  Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
-      *  A successful response will be returned in JSON. If the request failed, the response will contain
-      *  an error code and a message to help understand what went wrong.
+     *   Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
+     *   A successful response will be returned in JSON. If the request failed, the response will contain an error
+     *   code and a message to help understand what went wrong.
      *
      * @param url Publicly reachable URL of an image.
+     * @param detectObjectsOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the DetectResult object if successful.
      */
-    DetectResult detectObjects(String url);
+    DetectResult detectObjects(String url, DetectObjectsOptionalParameter detectObjectsOptionalParameter);
 
     /**
      * Performs object detection on the specified image.
-      *  Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
-      *  A successful response will be returned in JSON. If the request failed, the response will contain
-      *  an error code and a message to help understand what went wrong.
+     *   Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
+     *   A successful response will be returned in JSON. If the request failed, the response will contain an error
+     *   code and a message to help understand what went wrong.
      *
      * @param url Publicly reachable URL of an image.
+     * @param detectObjectsOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the DetectResult object
      */
-    Observable<DetectResult> detectObjectsAsync(String url);
+    Observable<DetectResult> detectObjectsAsync(String url, DetectObjectsOptionalParameter detectObjectsOptionalParameter);
 
+    /**
+     * Performs object detection on the specified image.
+     *   Two input methods are supported -- (1) Uploading an image or (2) specifying an image URL.
+     *   A successful response will be returned in JSON. If the request failed, the response will contain an error
+     *   code and a message to help understand what went wrong.
+     *
+     * @return the first stage of the detectObjects call
+     */
+    ComputerVisionDetectObjectsDefinitionStages.WithUrl detectObjects();
+
+    /**
+     * Grouping of detectObjects definition stages.
+     */
+    interface ComputerVisionDetectObjectsDefinitionStages {
+        /**
+         * The stage of the definition to be specify url.
+         */
+        interface WithUrl {
+            /**
+             * Publicly reachable URL of an image.
+             *
+             * @return next definition stage
+             */
+            ComputerVisionDetectObjectsDefinitionStages.WithExecute withUrl(String url);
+        }
+
+        /**
+         * The stage of the definition which allows for any other optional settings to be specified.
+         */
+        interface WithAllOptions {
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionDetectObjectsDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
+        }
+
+        /**
+         * The last stage of the definition which will make the operation call.
+        */
+        interface WithExecute extends ComputerVisionDetectObjectsDefinitionStages.WithAllOptions {
+            /**
+             * Execute the request.
+             *
+             * @return the DetectResult object if successful.
+             */
+            DetectResult execute();
+
+            /**
+             * Execute the request asynchronously.
+             *
+             * @return the observable to the DetectResult object
+             */
+            Observable<DetectResult> executeAsync();
+        }
+    }
+
+    /**
+     * The entirety of detectObjects definition.
+     */
+    interface ComputerVisionDetectObjectsDefinition extends
+        ComputerVisionDetectObjectsDefinitionStages.WithUrl,
+        ComputerVisionDetectObjectsDefinitionStages.WithExecute {
+    }
 
     /**
      * This operation generates a description of an image in human readable language with complete sentences. The
@@ -1611,11 +2044,10 @@ public interface ComputerVision {
      * @param url Publicly reachable URL of an image.
      * @param describeImageOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the ImageDescription object if successful.
      */
-    @Deprecated
     ImageDescription describeImage(String url, DescribeImageOptionalParameter describeImageOptionalParameter);
 
     /**
@@ -1632,7 +2064,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the ImageDescription object
      */
-    @Deprecated
     Observable<ImageDescription> describeImageAsync(String url, DescribeImageOptionalParameter describeImageOptionalParameter);
 
     /**
@@ -1691,6 +2122,14 @@ public interface ComputerVision {
              */
             ComputerVisionDescribeImageDefinitionStages.WithExecute withDescriptionExclude(List<DescriptionExclude> descriptionExclude);
 
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionDescribeImageDefinitionStages.WithExecute withModelVersion(String modelVersion);
+
         }
 
         /**
@@ -1732,11 +2171,10 @@ public interface ComputerVision {
      * @param url Publicly reachable URL of an image.
      * @param analyzeImageOptionalParameter the object representing the optional parameters to be set before calling this API
      * @throws IllegalArgumentException thrown if parameters fail the validation
-     * @throws ComputerVisionErrorException thrown if the request is rejected by server
+     * @throws ComputerVisionErrorResponseException thrown if the request is rejected by server
      * @throws RuntimeException all other wrapped checked exceptions if the request fails to be sent
      * @return the ImageAnalysis object if successful.
      */
-    @Deprecated
     ImageAnalysis analyzeImage(String url, AnalyzeImageOptionalParameter analyzeImageOptionalParameter);
 
     /**
@@ -1752,7 +2190,6 @@ public interface ComputerVision {
      * @throws IllegalArgumentException thrown if parameters fail the validation
      * @return the observable to the ImageAnalysis object
      */
-    @Deprecated
     Observable<ImageAnalysis> analyzeImageAsync(String url, AnalyzeImageOptionalParameter analyzeImageOptionalParameter);
 
     /**
@@ -1828,6 +2265,14 @@ public interface ComputerVision {
              * @return next definition stage
              */
             ComputerVisionAnalyzeImageDefinitionStages.WithExecute withDescriptionExclude(List<DescriptionExclude> descriptionExclude);
+
+            /**
+             * Optional parameter to specify the version of the AI model. Accepted values are: "latest", "2021-04-01".
+             *   Defaults to "latest".
+             *
+             * @return next definition stage
+             */
+            ComputerVisionAnalyzeImageDefinitionStages.WithExecute withModelVersion(String modelVersion);
 
         }
 

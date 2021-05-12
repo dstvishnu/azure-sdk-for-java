@@ -12,6 +12,7 @@ import com.azure.core.amqp.implementation.TracerProvider;
 import com.azure.core.util.Context;
 import com.azure.core.util.logging.ClientLogger;
 import com.azure.core.util.tracing.ProcessKind;
+import com.azure.messaging.eventhubs.models.CreateBatchOptions;
 import org.apache.qpid.proton.Proton;
 import org.apache.qpid.proton.amqp.Binary;
 import org.apache.qpid.proton.amqp.Symbol;
@@ -31,15 +32,20 @@ import java.util.Optional;
 
 import static com.azure.core.util.tracing.Tracer.AZ_TRACING_NAMESPACE_KEY;
 import static com.azure.core.util.tracing.Tracer.DIAGNOSTIC_ID_KEY;
+import static com.azure.core.util.tracing.Tracer.ENTITY_PATH_KEY;
+import static com.azure.core.util.tracing.Tracer.HOST_NAME_KEY;
 import static com.azure.core.util.tracing.Tracer.SPAN_CONTEXT_KEY;
 import static com.azure.messaging.eventhubs.implementation.ClientConstants.AZ_NAMESPACE_VALUE;
+import static com.azure.messaging.eventhubs.implementation.ClientConstants.AZ_TRACING_SERVICE_NAME;
 
 /**
  * A class for aggregating {@link EventData} into a single, size-limited, batch. It is treated as a single message when
  * sent to the Azure Event Hubs service.
  *
  * @see EventHubProducerClient#createBatch()
+ * @see EventHubProducerClient#createBatch(CreateBatchOptions)
  * @see EventHubProducerAsyncClient#createBatch()
+ * @see EventHubProducerAsyncClient#createBatch(CreateBatchOptions)
  * @see EventHubClientBuilder See EventHubClientBuilder for examples of building an asynchronous or synchronous
  *     producer.
  */
@@ -54,9 +60,11 @@ public final class EventDataBatch {
     private final String partitionId;
     private int sizeInBytes;
     private final TracerProvider tracerProvider;
+    private final String entityPath;
+    private final String hostname;
 
     EventDataBatch(int maxMessageSize, String partitionId, String partitionKey, ErrorContextProvider contextProvider,
-        TracerProvider tracerProvider) {
+        TracerProvider tracerProvider, String entityPath, String hostname) {
         this.maxMessageSize = maxMessageSize;
         this.partitionKey = partitionKey;
         this.partitionId = partitionId;
@@ -65,6 +73,8 @@ public final class EventDataBatch {
         this.sizeInBytes = (maxMessageSize / 65536) * 1024; // reserve 1KB for every 64KB
         this.eventBytes = new byte[maxMessageSize];
         this.tracerProvider = tracerProvider;
+        this.entityPath = entityPath;
+        this.hostname = hostname;
     }
 
     /**
@@ -105,7 +115,7 @@ public final class EventDataBatch {
      */
     public boolean tryAdd(final EventData eventData) {
         if (eventData == null) {
-            throw logger.logExceptionAsWarning(new IllegalArgumentException("eventData cannot be null"));
+            throw logger.logExceptionAsWarning(new NullPointerException("eventData cannot be null"));
         }
         EventData event = tracerProvider.isEnabled() ? traceMessageSpan(eventData) : eventData;
 
@@ -144,8 +154,12 @@ public final class EventDataBatch {
             return eventData;
         } else {
             // Starting the span makes the sampling decision (nothing is logged at this time)
-            Context eventContext = eventData.getContext().addData(AZ_TRACING_NAMESPACE_KEY, AZ_NAMESPACE_VALUE);
-            Context eventSpanContext = tracerProvider.startSpan(eventContext, ProcessKind.MESSAGE);
+            Context eventContext = eventData.getContext()
+                .addData(AZ_TRACING_NAMESPACE_KEY, AZ_NAMESPACE_VALUE)
+                .addData(ENTITY_PATH_KEY, this.entityPath)
+                .addData(HOST_NAME_KEY, this.hostname);
+            Context eventSpanContext = tracerProvider.startSpan(AZ_TRACING_SERVICE_NAME, eventContext,
+                ProcessKind.MESSAGE);
             Optional<Object> eventDiagnosticIdOptional = eventSpanContext.getData(DIAGNOSTIC_ID_KEY);
             if (eventDiagnosticIdOptional.isPresent()) {
                 eventData.getProperties().put(DIAGNOSTIC_ID_KEY, eventDiagnosticIdOptional.get().toString());

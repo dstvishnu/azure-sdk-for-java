@@ -3,17 +3,22 @@
 
 package com.azure.storage.blob.specialized
 
+import com.azure.core.http.HttpHeader
+import com.azure.core.http.HttpHeaders
+import com.azure.core.http.HttpPipelineCallContext
+import com.azure.core.http.HttpPipelineNextPolicy
+import com.azure.core.http.HttpResponse
+import com.azure.core.http.policy.HttpPipelinePolicy
 import com.azure.core.util.FluxUtil
 import com.azure.storage.blob.APISpec
 import com.azure.storage.blob.HttpGetterInfo
 import com.azure.storage.blob.models.BlobStorageException
 import com.azure.storage.blob.models.DownloadRetryOptions
 import reactor.core.Exceptions
-import reactor.core.scheduler.Schedulers
-import spock.lang.Requires
+import reactor.core.publisher.Mono
+import reactor.test.StepVerifier
 import spock.lang.Unroll
 
-import java.time.Duration
 import java.util.concurrent.TimeoutException
 
 class DownloadResponseTest extends APISpec {
@@ -36,6 +41,33 @@ class DownloadResponseTest extends APISpec {
         outputStream.toByteArray() == defaultData.array()
     }
 
+    def "Network call no etag returned"() {
+        setup:
+        def removeEtagPolicy = new HttpPipelinePolicy() {
+            @Override
+            Mono<HttpResponse> process(HttpPipelineCallContext context, HttpPipelineNextPolicy next) {
+                return next.process()
+                .flatMap({ response ->
+                    HttpHeader eTagHeader = response.getHeaders().get("eTag")
+                    if (eTagHeader == null) {
+                        return  Mono.just(response);
+                    }
+                    HttpHeaders headers = response.getHeaders()
+                    headers.remove("eTag")
+                    return  Mono.just(getStubDownloadResponse(response, response.getStatusCode(), response.getBody(), headers));
+                })
+            }
+        }
+        def bsc = getServiceClientBuilder(env.primaryAccount.credential, primaryBlobServiceClient.getAccountUrl(), removeEtagPolicy).buildClient()
+        def cc = bsc.getBlobContainerClient(containerName)
+        def bu = cc.getBlobClient(bu.getBlobName()).getBlockBlobClient()
+
+        expect:
+        OutputStream outputStream = new ByteArrayOutputStream()
+        bu.download(outputStream)
+        outputStream.toByteArray() == defaultData.array()
+    }
+
     @Unroll
     def "Successful"() {
         setup:
@@ -43,7 +75,7 @@ class DownloadResponseTest extends APISpec {
 
         HttpGetterInfo info = new HttpGetterInfo()
             .setOffset(0)
-            .setCount(flux.getScenarioData().remaining())
+            .setCount(setCount ? flux.getScenarioData().remaining() : null)
             .setETag("etag")
 
         DownloadRetryOptions options = new DownloadRetryOptions().setMaxRetryRequests(5)
@@ -57,11 +89,13 @@ class DownloadResponseTest extends APISpec {
 
 
         where:
-        scenario                                                             | tryNumber
-        DownloadResponseMockFlux.DR_TEST_SCENARIO_SUCCESSFUL_ONE_CHUNK       | 1
-        DownloadResponseMockFlux.DR_TEST_SCENARIO_SUCCESSFUL_MULTI_CHUNK     | 1
-        DownloadResponseMockFlux.DR_TEST_SCENARIO_SUCCESSFUL_STREAM_FAILURES | 4
-        DownloadResponseMockFlux.DR_TEST_SCENARIO_NO_MULTIPLE_SUBSCRIPTION   | 4
+        scenario                                                             | tryNumber | setCount
+        DownloadResponseMockFlux.DR_TEST_SCENARIO_SUCCESSFUL_ONE_CHUNK       | 1         | true
+        DownloadResponseMockFlux.DR_TEST_SCENARIO_SUCCESSFUL_MULTI_CHUNK     | 1         | true
+        DownloadResponseMockFlux.DR_TEST_SCENARIO_SUCCESSFUL_STREAM_FAILURES | 4         | true
+        DownloadResponseMockFlux.DR_TEST_SCENARIO_NO_MULTIPLE_SUBSCRIPTION   | 4         | true
+        DownloadResponseMockFlux.DR_TEST_SCENARIO_ERROR_AFTER_ALL_DATA       | 1         | true // Range download
+        DownloadResponseMockFlux.DR_TEST_SCENARIO_ERROR_AFTER_ALL_DATA       | 1         | false // Non-range download
     }
 
     @Unroll
@@ -83,10 +117,6 @@ class DownloadResponseTest extends APISpec {
         exceptionType.isInstance(e)
         flux.getTryNumber() == tryNumber
 
-        /*
-        tryNumber is 7 because the initial request is the first try, then it will fail when retryCount>maxRetryCount,
-        which is when retryCount=6 and therefore tryNumber=7
-         */
         where:
         scenario                                                       | exceptionType        | tryNumber
         DownloadResponseMockFlux.DR_TEST_SCENARIO_MAX_RETRIES_EXCEEDED | IOException          | 6
@@ -98,17 +128,13 @@ class DownloadResponseTest extends APISpec {
     def "Info null IA"() {
         setup:
         DownloadResponseMockFlux flux = new DownloadResponseMockFlux(DownloadResponseMockFlux.DR_TEST_SCENARIO_SUCCESSFUL_ONE_CHUNK, this)
+        def info = null
 
         when:
         new ReliableDownload(null, null, info, { HttpGetterInfo newInfo -> flux.getter(newInfo) })
 
         then:
         thrown(NullPointerException)
-
-        where:
-        info                               | _
-        null                               | _
-        new HttpGetterInfo().setETag(null) | _
     }
 
     def "Options IA"() {
@@ -153,7 +179,6 @@ class DownloadResponseTest extends APISpec {
         thrown(IllegalArgumentException)
     }
 
-    @Requires( {liveMode()} ) // Because this test is inherently slow
     @Unroll
     def "Timeout"() {
         setup:
@@ -163,12 +188,13 @@ class DownloadResponseTest extends APISpec {
         HttpGetterInfo info = new HttpGetterInfo().setETag("etag")
 
         when:
-        ReliableDownload response = flux.setOptions(options).getter(info).block()
-        response.getValue().subscribeOn(Schedulers.elastic()).then().block(Duration.ofSeconds((retryCount + 1) * 62))
+        def bufferMono = flux.setOptions(options).getter(info)
+            .flatMapMany({ it.getValue() })
 
         then:
-        def e = thrown(Exceptions.ReactiveException)
-        e.getCause() instanceof TimeoutException
+        StepVerifier.create(bufferMono)
+            .expectSubscription()
+            .verifyErrorMatches({ Exceptions.unwrap(it) instanceof TimeoutException })
 
         where:
         // We test retry count elsewhere. Just using small numbers to speed up the test.

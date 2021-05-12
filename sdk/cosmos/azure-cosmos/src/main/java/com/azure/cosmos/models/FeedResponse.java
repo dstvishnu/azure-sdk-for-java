@@ -6,12 +6,15 @@ package com.azure.cosmos.models;
 import com.azure.core.util.IterableStream;
 import com.azure.core.util.paging.ContinuablePage;
 import com.azure.cosmos.BridgeInternal;
-import com.azure.cosmos.FeedResponseDiagnostics;
+import com.azure.cosmos.CosmosDiagnostics;
 import com.azure.cosmos.implementation.Constants;
 import com.azure.cosmos.implementation.HttpConstants;
 import com.azure.cosmos.implementation.QueryMetrics;
 import com.azure.cosmos.implementation.QueryMetricsConstants;
-import org.apache.commons.lang3.StringUtils;
+import com.azure.cosmos.implementation.RxDocumentServiceResponse;
+import com.azure.cosmos.implementation.Strings;
+import com.azure.cosmos.implementation.apachecommons.lang.StringUtils;
+import com.azure.cosmos.implementation.query.QueryInfo;
 
 import java.util.HashMap;
 import java.util.List;
@@ -33,15 +36,32 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     private final boolean useEtagAsContinuation;
     final boolean nochanges;
     private final ConcurrentMap<String, QueryMetrics> queryMetricsMap;
-    private final String defaultPartition = "0";
-    private final FeedResponseDiagnostics feedResponseDiagnostics;
+    private final static String defaultPartition = "0";
+    private CosmosDiagnostics cosmosDiagnostics;
+    private QueryInfo queryInfo;
+    private QueryInfo.QueryPlanDiagnosticsContext queryPlanDiagnosticsContext;
 
     FeedResponse(List<T> results, Map<String, String> headers) {
         this(results, headers, false, false, new ConcurrentHashMap<>());
     }
 
-    FeedResponse(List<T> results, Map<String, String> headers, ConcurrentMap<String, QueryMetrics> queryMetricsMap) {
-        this(results, headers, false, false, queryMetricsMap);
+    // TODO: probably have to add two booleans
+    FeedResponse(List<T> results, RxDocumentServiceResponse response) {
+        this(results, response.getResponseHeaders(), false, false, new ConcurrentHashMap<>());
+        this.cosmosDiagnostics =response.getCosmosDiagnostics();
+        if (this.cosmosDiagnostics != null) {
+            BridgeInternal.setFeedResponseDiagnostics(this.cosmosDiagnostics, queryMetricsMap);
+        }
+    }
+
+    FeedResponse(
+        List<T> results,
+        Map<String, String> headers,
+        ConcurrentMap<String, QueryMetrics> queryMetricsMap,
+        boolean useEtagAsContinuation,
+        boolean isNoChanges) {
+
+        this(results, headers, useEtagAsContinuation, isNoChanges, queryMetricsMap);
     }
 
     FeedResponse(List<T> results, Map<String, String> header, boolean nochanges) {
@@ -63,7 +83,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
         this.useEtagAsContinuation = useEtagAsContinuation;
         this.nochanges = nochanges;
         this.queryMetricsMap = new ConcurrentHashMap<>(queryMetricsMap);
-        this.feedResponseDiagnostics = BridgeInternal.createFeedResponseDiagnostics(queryMetricsMap);
+        this.cosmosDiagnostics = BridgeInternal.createCosmosDiagnostics(queryMetricsMap);
     }
 
     /**
@@ -94,7 +114,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the maximum quota for collection resources within an account from the Azure Cosmos DB service.
+     * Gets the maximum quota for container resources within an account from the Azure Cosmos DB service.
      *
      * @return The maximum quota for the account.
      */
@@ -103,9 +123,9 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the current number of collection resources within the account from the Azure Cosmos DB service.
+     * Gets the current number of container resources within the account from the Azure Cosmos DB service.
      *
-     * @return The current number of collections.
+     * @return The current number of containers.
      */
     public long getCollectionUsage() {
         return this.currentQuotaHeader(Constants.Quota.COLLECTION);
@@ -148,7 +168,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the maximum size of a collection in kilobytes from the Azure Cosmos DB service.
+     * Gets the maximum size of a container in kilobytes from the Azure Cosmos DB service.
      *
      * @return The maximum quota in kilobytes.
      */
@@ -157,16 +177,34 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the current size of a collection in kilobytes from the Azure Cosmos DB service.
+     * Gets the current size of a container in kilobytes from the Azure Cosmos DB service.
      *
-     * @return The current size of a collection in kilobytes.
+     * @return The current size of a container in kilobytes.
      */
     public long getCollectionSizeUsage() {
         return this.currentQuotaHeader(Constants.Quota.COLLECTION_SIZE);
     }
 
     /**
-     * Gets the maximum quota of stored procedures for a collection from the Azure Cosmos DB service.
+     * Gets the current size of the documents in a container in kilobytes from the Azure Cosmos DB service.
+     *
+     * @return The current size of a container in kilobytes.
+     */
+    public long getDocumentUsage() {
+        return this.currentQuotaHeader(Constants.Quota.DOCUMENTS_SIZE);
+    }
+
+    /**
+     * Current document count usage.
+     *
+     * @return the document count usage.
+     */
+    public long getDocumentCountUsage() {
+        return this.currentQuotaHeader(Constants.Quota.DOCUMENTS_COUNT);
+    }
+
+    /**
+     * Gets the maximum quota of stored procedures for a container from the Azure Cosmos DB service.
      *
      * @return The maximum stored procedure quota.
      */
@@ -175,7 +213,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the current number of stored procedures for a collection from the Azure Cosmos DB service.
+     * Gets the current number of stored procedures for a container from the Azure Cosmos DB service.
      *
      * @return The current number of stored procedures.
      */
@@ -184,7 +222,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the maximum quota of triggers for a collection from the Azure Cosmos DB service.
+     * Gets the maximum quota of triggers for a container from the Azure Cosmos DB service.
      *
      * @return The maximum triggers quota.
      */
@@ -193,7 +231,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Get the current number of triggers for a collection from the Azure Cosmos DB service.
+     * Get the current number of triggers for a container from the Azure Cosmos DB service.
      *
      * @return The current number of triggers.
      */
@@ -202,7 +240,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the maximum quota of user defined functions for a collection from the Azure Cosmos DB service.
+     * Gets the maximum quota of user defined functions for a container from the Azure Cosmos DB service.
      *
      * @return The maximum user defined functions quota.
      */
@@ -211,7 +249,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the current number of user defined functions for a collection from the Azure Cosmos DB service.
+     * Gets the current number of user defined functions for a container from the Azure Cosmos DB service.
      *
      * @return the current number of user defined functions.
      */
@@ -223,7 +261,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
      * Gets the maximum size limit for this entity from the Azure Cosmos DB service.
      *
      * @return the maximum size limit for this entity.
-     * Measured in kilobytes for document resources and in counts for other resources.
+     * Measured in kilobytes for item resources and in counts for other resources.
      */
     public String getMaxResourceQuota() {
         return getValueOrNull(header,
@@ -233,7 +271,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     /**
      * Gets the current size of this entity from the Azure Cosmos DB service.
      *
-     * @return the current size for this entity. Measured in kilobytes for document resources
+     * @return the current size for this entity. Measured in kilobytes for item resources
      * and in counts for other resources.
      */
     public String getCurrentResourceQuotaUsage() {
@@ -242,7 +280,10 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
     }
 
     /**
-     * Gets the number of index paths (terms) generated by the operation.
+     * Gets the request charge as request units (RU) consumed by the operation.
+     * <p>
+     * For more information about the RU and factors that can impact the effective charges please visit
+     * <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/request-units">Request Units in Azure Cosmos DB</a>
      *
      * @return the request charge.
      */
@@ -252,7 +293,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
         if (StringUtils.isEmpty(value)) {
             return 0;
         }
-        return Double.valueOf(value);
+        return Double.parseDouble(value);
     }
 
     /**
@@ -279,6 +320,27 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
                                 ? HttpConstants.HttpHeaders.E_TAG
                                 : HttpConstants.HttpHeaders.CONTINUATION;
         return getValueOrNull(header, headerName);
+    }
+
+    /**
+     * Sets the continuation token to be used for continuing the enumeration.
+     *
+     * @param continuationToken updates the continuation token header of the response
+     */
+    void setContinuationToken(String continuationToken) {
+        String headerName = useEtagAsContinuation
+            ? HttpConstants.HttpHeaders.E_TAG
+            : HttpConstants.HttpHeaders.CONTINUATION;
+
+        if (!Strings.isNullOrWhiteSpace(continuationToken)) {
+            this.header.put(headerName, continuationToken);
+        } else {
+            this.header.remove(headerName);
+        }
+    }
+
+    boolean getNoChanges() {
+        return this.nochanges;
     }
 
     /**
@@ -309,8 +371,8 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
      *
      * @return Feed response diagnostics
      */
-    public FeedResponseDiagnostics getFeedResponseDiagnostics() {
-        return this.feedResponseDiagnostics;
+    public CosmosDiagnostics getCosmosDiagnostics() {
+        return this.cosmosDiagnostics;
     }
 
     ConcurrentMap<String, QueryMetrics> queryMetrics() {
@@ -318,7 +380,7 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
             return queryMetricsMap;
         }
 
-        //We parse query metrics for un-partitioned collection here
+        //We parse query metrics for un-partitioned container here
         if (!StringUtils.isEmpty(getQueryMetricsString())) {
             String qm = getQueryMetricsString();
             qm += String.format(";%s=%.2f", QueryMetricsConstants.RequestCharge, getRequestCharge());
@@ -386,6 +448,12 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
             } else if (headerMaxQuotaWords[i].equalsIgnoreCase(Constants.Quota.TRIGGER)) {
                 this.quotaHeaders.put(Constants.Quota.TRIGGER, Long.valueOf(headerMaxQuotaWords[i + 1]));
                 this.usageHeaders.put(Constants.Quota.TRIGGER, Long.valueOf(headerCurrentUsageWords[i + 1]));
+            } else if (headerMaxQuotaWords[i].equalsIgnoreCase(Constants.Quota.DOCUMENTS_SIZE)) {
+                this.quotaHeaders.put(Constants.Quota.DOCUMENTS_SIZE, Long.valueOf(headerMaxQuotaWords[i + 1]));
+                this.usageHeaders.put(Constants.Quota.DOCUMENTS_SIZE, Long.valueOf(headerCurrentUsageWords[i + 1]));
+            } else if (headerMaxQuotaWords[i].equalsIgnoreCase(Constants.Quota.DOCUMENTS_COUNT)) {
+                this.quotaHeaders.put(Constants.Quota.DOCUMENTS_COUNT, Long.valueOf(headerMaxQuotaWords[i + 1]));
+                this.usageHeaders.put(Constants.Quota.DOCUMENTS_COUNT, Long.valueOf(headerCurrentUsageWords[i + 1]));
             } else if (headerMaxQuotaWords[i].equalsIgnoreCase(Constants.Quota.USER_DEFINED_FUNCTION)) {
                 this.quotaHeaders.put(Constants.Quota.USER_DEFINED_FUNCTION, Long.valueOf(headerMaxQuotaWords[i + 1]));
                 this.usageHeaders.put(Constants.Quota.USER_DEFINED_FUNCTION,
@@ -399,5 +467,22 @@ public class FeedResponse<T> implements ContinuablePage<String, T> {
             return map.get(key);
         }
         return null;
+    }
+
+    void setQueryInfo(QueryInfo queryInfo) {
+        this.queryInfo = queryInfo;
+    }
+
+    QueryInfo getQueryInfo() {
+        return this.queryInfo;
+    }
+
+    QueryInfo.QueryPlanDiagnosticsContext getQueryPlanDiagnosticsContext() {
+        return queryPlanDiagnosticsContext;
+    }
+
+    void setQueryPlanDiagnosticsContext(QueryInfo.QueryPlanDiagnosticsContext queryPlanDiagnosticsContext) {
+        this.queryPlanDiagnosticsContext = queryPlanDiagnosticsContext;
+        BridgeInternal.setQueryPlanDiagnosticsContext(cosmosDiagnostics, queryPlanDiagnosticsContext);
     }
 }

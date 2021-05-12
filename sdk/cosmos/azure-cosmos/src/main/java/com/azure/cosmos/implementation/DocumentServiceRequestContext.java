@@ -4,7 +4,7 @@
 package com.azure.cosmos.implementation;
 
 import com.azure.cosmos.ConsistencyLevel;
-import com.azure.cosmos.CosmosResponseDiagnostics;
+import com.azure.cosmos.CosmosDiagnostics;
 import com.azure.cosmos.implementation.directconnectivity.StoreResponse;
 import com.azure.cosmos.implementation.directconnectivity.StoreResult;
 import com.azure.cosmos.implementation.directconnectivity.TimeoutHelper;
@@ -12,9 +12,10 @@ import com.azure.cosmos.implementation.routing.PartitionKeyInternal;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-public class DocumentServiceRequestContext implements Cloneable{
+public class DocumentServiceRequestContext implements Cloneable {
     public volatile boolean forceAddressRefresh;
     public volatile boolean forceRefreshAddressCache;
     public volatile RequestChargeTracker requestChargeTracker;
@@ -35,11 +36,10 @@ public class DocumentServiceRequestContext implements Cloneable{
     public volatile List<String> storeResponses;
     public volatile StoreResult quorumSelectedStoreResponse;
     public volatile PartitionKeyInternal effectivePartitionKey;
-    public volatile CosmosResponseDiagnostics cosmosResponseDiagnostics;
-    public RetryContext retryContext;
+    public volatile CosmosDiagnostics cosmosDiagnostics;
+    public volatile String resourcePhysicalAddress;
 
     public DocumentServiceRequestContext() {
-        retryContext = new RetryContext();
     }
 
     /**
@@ -49,7 +49,7 @@ public class DocumentServiceRequestContext implements Cloneable{
      * @param locationIndex Index of the location to which the request should be routed.
      * @param usePreferredLocations Use preferred locations to route request.
      */
-    public void RouteToLocation(int locationIndex, boolean usePreferredLocations) {
+    public void routeToLocation(int locationIndex, boolean usePreferredLocations) {
         this.locationIndexToRoute = locationIndex;
         this.usePreferredLocations = usePreferredLocations;
         this.locationEndpointToRoute = null;
@@ -61,7 +61,7 @@ public class DocumentServiceRequestContext implements Cloneable{
      *
      * @param locationEndpoint Location endpoint to which the request should be routed.
      */
-    public void RouteToLocation(URI locationEndpoint) {
+    public void routeToLocation(URI locationEndpoint) {
         this.locationEndpointToRoute = locationEndpoint;
         this.locationIndexToRoute = null;
         this.usePreferredLocations = null;
@@ -70,56 +70,10 @@ public class DocumentServiceRequestContext implements Cloneable{
     /**
      * Clears location-based routing directive
      */
-    public void ClearRouteToLocation() {
+    public void clearRouteToLocation() {
         this.locationIndexToRoute = null;
         this.locationEndpointToRoute = null;
         this.usePreferredLocations = null;
-    }
-
-    public void updateRetryContext(IRetryPolicy retryPolicy, boolean isGenericRetry) {
-        if (isGenericRetry) {
-            if (this.retryContext.directRetrySpecificStatusAndSubStatusCodes != null && this.retryContext.directRetrySpecificStatusAndSubStatusCodes.size() > 0) {
-                for (int i = this.retryContext.directRetrySpecificStatusAndSubStatusCodes.size() - 1; i >= 0; i--) {
-                    retryPolicy.incrementRetry();
-                    retryPolicy.addStatusAndSubStatusCode(0, this.retryContext.directRetrySpecificStatusAndSubStatusCodes.get(i)[0],
-                        this.retryContext.directRetrySpecificStatusAndSubStatusCodes.get(i)[1]);
-                }
-                this.retryContext.directRetrySpecificStatusAndSubStatusCodes.clear();
-            }
-
-            if (retryPolicy.getStatusAndSubStatusCodes() != null) {
-                this.retryContext.genericRetrySpecificStatusAndSubStatusCodes = new ArrayList<>(retryPolicy.getStatusAndSubStatusCodes());
-            } else {
-                this.retryContext.genericRetrySpecificStatusAndSubStatusCodes = new ArrayList<>();
-            }
-            this.retryContext.retryCount = retryPolicy.getRetryCount();
-            this.retryContext.statusAndSubStatusCodes = retryPolicy.getStatusAndSubStatusCodes();
-            if (this.retryContext.retryStartTime == null) {
-                this.retryContext.retryStartTime = retryPolicy.getStartTime();
-            }
-            this.retryContext.retryEndTime = retryPolicy.getEndTime();
-        } else {
-            if (this.retryContext.genericRetrySpecificStatusAndSubStatusCodes != null && this.retryContext.genericRetrySpecificStatusAndSubStatusCodes.size() > 0) {
-                for (int i = this.retryContext.genericRetrySpecificStatusAndSubStatusCodes.size() - 1; i >= 0; i--) {
-                    retryPolicy.incrementRetry();
-                    retryPolicy.addStatusAndSubStatusCode(0, this.retryContext.genericRetrySpecificStatusAndSubStatusCodes.get(i)[0],
-                        this.retryContext.genericRetrySpecificStatusAndSubStatusCodes.get(i)[1]);
-                }
-                this.retryContext.genericRetrySpecificStatusAndSubStatusCodes.clear();
-            }
-
-            if (retryPolicy.getStatusAndSubStatusCodes() != null) {
-                this.retryContext.directRetrySpecificStatusAndSubStatusCodes = new ArrayList<>(retryPolicy.getStatusAndSubStatusCodes());
-            } else {
-                this.retryContext.directRetrySpecificStatusAndSubStatusCodes = new ArrayList<>();
-            }
-            this.retryContext.retryCount = retryPolicy.getRetryCount();
-            this.retryContext.statusAndSubStatusCodes = retryPolicy.getStatusAndSubStatusCodes();
-            if (this.retryContext.retryStartTime == null) {
-                this.retryContext.retryStartTime = retryPolicy.getStartTime();
-            }
-            this.retryContext.retryEndTime = retryPolicy.getEndTime();
-        }
     }
 
     @Override
@@ -143,8 +97,8 @@ public class DocumentServiceRequestContext implements Cloneable{
         context.performLocalRefreshOnGoneException = this.performLocalRefreshOnGoneException;
         context.effectivePartitionKey = this.effectivePartitionKey;
         context.performedBackgroundAddressRefresh = this.performedBackgroundAddressRefresh;
-        context.cosmosResponseDiagnostics = this.cosmosResponseDiagnostics;
-        context.retryContext = new RetryContext(this.retryContext);
+        context.cosmosDiagnostics = this.cosmosDiagnostics;
+        context.resourcePhysicalAddress = this.resourcePhysicalAddress;
 
         return context;
     }

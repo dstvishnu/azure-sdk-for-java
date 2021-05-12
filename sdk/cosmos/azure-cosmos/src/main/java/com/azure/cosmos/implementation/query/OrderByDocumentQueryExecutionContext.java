@@ -3,30 +3,38 @@
 package com.azure.cosmos.implementation.query;
 
 import com.azure.cosmos.BridgeInternal;
-import com.azure.cosmos.CosmosClientException;
-import com.azure.cosmos.models.FeedOptions;
-import com.azure.cosmos.models.FeedResponse;
-import com.azure.cosmos.models.Resource;
-import com.azure.cosmos.models.SqlQuerySpec;
+import com.azure.cosmos.CosmosException;
+import com.azure.cosmos.implementation.BadRequestException;
+import com.azure.cosmos.implementation.ClientSideRequestStatistics;
+import com.azure.cosmos.implementation.DiagnosticsClientContext;
 import com.azure.cosmos.implementation.DocumentClientRetryPolicy;
 import com.azure.cosmos.implementation.HttpConstants;
 import com.azure.cosmos.implementation.PartitionKeyRange;
 import com.azure.cosmos.implementation.QueryMetrics;
 import com.azure.cosmos.implementation.RequestChargeTracker;
+import com.azure.cosmos.implementation.Resource;
+import com.azure.cosmos.implementation.ResourceId;
 import com.azure.cosmos.implementation.ResourceType;
 import com.azure.cosmos.implementation.RxDocumentServiceRequest;
 import com.azure.cosmos.implementation.Utils;
 import com.azure.cosmos.implementation.Utils.ValueHolder;
+import com.azure.cosmos.implementation.apachecommons.lang.NotImplementedException;
+import com.azure.cosmos.implementation.apachecommons.lang.tuple.ImmutablePair;
+import com.azure.cosmos.implementation.apachecommons.lang.tuple.Pair;
+import com.azure.cosmos.implementation.feedranges.FeedRangeEpkImpl;
 import com.azure.cosmos.implementation.query.orderbyquery.OrderByRowResult;
 import com.azure.cosmos.implementation.query.orderbyquery.OrderbyRowComparer;
 import com.azure.cosmos.implementation.routing.Range;
-import org.apache.commons.lang3.NotImplementedException;
-import org.apache.commons.lang3.tuple.ImmutablePair;
+import com.azure.cosmos.models.CosmosQueryRequestOptions;
+import com.azure.cosmos.models.FeedResponse;
+import com.azure.cosmos.models.ModelBridgeInternal;
+import com.azure.cosmos.models.SqlQuerySpec;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,22 +50,23 @@ import java.util.function.Function;
  */
 public class OrderByDocumentQueryExecutionContext<T extends Resource>
         extends ParallelDocumentQueryExecutionContextBase<T> {
-    private final String FormatPlaceHolder = "{documentdb-formattableorderbyquery-filter}";
-    private final String True = "true";
+    private final static String FormatPlaceHolder = "{documentdb-formattableorderbyquery-filter}";
+    private final static String True = "true";
     private final String collectionRid;
     private final OrderbyRowComparer<T> consumeComparer;
     private final RequestChargeTracker tracker;
     private final ConcurrentMap<String, QueryMetrics> queryMetricMap;
+    List<ClientSideRequestStatistics> clientSideRequestStatisticsList;
     private Flux<OrderByRowResult<T>> orderByObservable;
-    private final Map<String, OrderByContinuationToken> targetRangeToOrderByContinuationTokenMap;
+    private final Map<FeedRangeEpkImpl, OrderByContinuationToken> targetRangeToOrderByContinuationTokenMap;
 
     private OrderByDocumentQueryExecutionContext(
+            DiagnosticsClientContext diagnosticsClientContext,
             IDocumentQueryClient client,
-            List<PartitionKeyRange> partitionKeyRanges,
             ResourceType resourceTypeEnum,
             Class<T> klass,
             SqlQuerySpec query,
-            FeedOptions feedOptions,
+            CosmosQueryRequestOptions cosmosQueryRequestOptions,
             String resourceLink,
             String rewrittenQuery,
             boolean isContinuationExpected,
@@ -65,76 +74,67 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
             OrderbyRowComparer<T> consumeComparer,
             String collectionRid,
             UUID correlatedActivityId) {
-        super(client, partitionKeyRanges, resourceTypeEnum, klass, query, feedOptions, resourceLink, rewrittenQuery,
+        super(diagnosticsClientContext, client, resourceTypeEnum, klass, query, cosmosQueryRequestOptions, resourceLink, rewrittenQuery,
                 isContinuationExpected, getLazyFeedResponse, correlatedActivityId);
         this.collectionRid = collectionRid;
         this.consumeComparer = consumeComparer;
         this.tracker = new RequestChargeTracker();
         this.queryMetricMap = new ConcurrentHashMap<>();
+        this.clientSideRequestStatisticsList = new ArrayList<>();
         targetRangeToOrderByContinuationTokenMap = new HashMap<>();
     }
 
     public static <T extends Resource> Flux<IDocumentQueryExecutionComponent<T>> createAsync(
+            DiagnosticsClientContext diagnosticsClientContext,
             IDocumentQueryClient client,
-            ResourceType resourceTypeEnum,
-            Class<T> resourceType,
-            SqlQuerySpec expression,
-            FeedOptions feedOptions,
-            String resourceLink,
-            String collectionRid,
-            PartitionedQueryExecutionInfo partitionedQueryExecutionInfo,
-            List<PartitionKeyRange> partitionKeyRanges,
-            int initialPageSize,
-            boolean isContinuationExpected,
-            boolean getLazyFeedResponse,
-            UUID correlatedActivityId) {
+            PipelinedDocumentQueryParams<T> initParams) {
 
-        OrderByDocumentQueryExecutionContext<T> context = new OrderByDocumentQueryExecutionContext<T>(client,
-                partitionKeyRanges,
-                resourceTypeEnum,
-                resourceType,
-                expression,
-                feedOptions,
-                resourceLink,
-                partitionedQueryExecutionInfo.getQueryInfo().getRewrittenQuery(),
-                isContinuationExpected,
-                getLazyFeedResponse,
-                new OrderbyRowComparer<T>(partitionedQueryExecutionInfo.getQueryInfo().getOrderBy()),
-                collectionRid,
-                correlatedActivityId);
+        OrderByDocumentQueryExecutionContext<T> context = new OrderByDocumentQueryExecutionContext<T>(diagnosticsClientContext,
+                client,
+                initParams.getResourceTypeEnum(),
+                initParams.getResourceType(),
+                initParams.getQuery(),
+                initParams.getCosmosQueryRequestOptions(),
+                initParams.getResourceLink(),
+                initParams.getQueryInfo().getRewrittenQuery(),
+                initParams.isContinuationExpected(),
+                initParams.isGetLazyResponseFeed(),
+                new OrderbyRowComparer<T>(initParams.getQueryInfo().getOrderBy()),
+                initParams.getCollectionRid(),
+                initParams.getCorrelatedActivityId());
+
+        context.setTop(initParams.getTop());
 
         try {
-            context.initialize(partitionKeyRanges,
-                    partitionedQueryExecutionInfo.getQueryInfo().getOrderBy(),
-                    partitionedQueryExecutionInfo.getQueryInfo().getOrderByExpressions(),
-                    initialPageSize,
-                    feedOptions.getRequestContinuation());
+            context.initialize(
+                    initParams.getFeedRanges(),
+                    initParams.getQueryInfo().getOrderBy(),
+                    initParams.getQueryInfo().getOrderByExpressions(),
+                    initParams.getInitialPageSize(),
+                    ModelBridgeInternal.getRequestContinuationFromQueryRequestOptions(initParams.getCosmosQueryRequestOptions()));
 
             return Flux.just(context);
-        } catch (CosmosClientException dce) {
+        } catch (CosmosException dce) {
             return Flux.error(dce);
         }
     }
 
     private void initialize(
-            List<PartitionKeyRange> partitionKeyRanges,
-            List<SortOrder> sortOrders,
-            Collection<String> orderByExpressions,
-            int initialPageSize,
-            String continuationToken) throws CosmosClientException {
+        List<FeedRangeEpkImpl> feedRanges, List<SortOrder> sortOrders,
+        Collection<String> orderByExpressions,
+        int initialPageSize,
+        String continuationToken) throws CosmosException {
         if (continuationToken == null) {
             // First iteration so use null continuation tokens and "true" filters
-            Map<PartitionKeyRange, String> partitionKeyRangeToContinuationToken = new HashMap<PartitionKeyRange, String>();
-            for (PartitionKeyRange partitionKeyRange : partitionKeyRanges) {
-                partitionKeyRangeToContinuationToken.put(partitionKeyRange,
+            Map<FeedRangeEpkImpl, String> partitionKeyRangeToContinuationToken = new HashMap<>();
+            for (FeedRangeEpkImpl feedRangeEpk : feedRanges) {
+                partitionKeyRangeToContinuationToken.put(feedRangeEpk,
                         null);
             }
-
             super.initialize(collectionRid,
                     partitionKeyRangeToContinuationToken,
                     initialPageSize,
-                    new SqlQuerySpec(querySpec.getQueryText().replace(FormatPlaceHolder,
-                            True),
+                    new SqlQuerySpec(querySpec.getQueryText().replace(FormatPlaceHolder, True),
                             querySpec.getParameters()));
         } else {
             // Check to see if order by continuation token is a valid JSON.
@@ -144,7 +144,7 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
                     outOrderByContinuationToken)) {
                 String message = String.format("INVALID JSON in continuation token %s for OrderBy~Context",
                         continuationToken);
-                throw BridgeInternal.createCosmosClientException(HttpConstants.StatusCodes.BADREQUEST,
+                throw BridgeInternal.createCosmosException(HttpConstants.StatusCodes.BADREQUEST,
                         message);
             }
 
@@ -156,47 +156,34 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
             if (compositeContinuationToken.getRange().isEmpty()) {
                 String message = String.format("INVALID RANGE in the continuation token %s for OrderBy~Context.",
                         continuationToken);
-                throw BridgeInternal.createCosmosClientException(HttpConstants.StatusCodes.BADREQUEST,
+                throw BridgeInternal.createCosmosException(HttpConstants.StatusCodes.BADREQUEST,
                         message);
             }
 
+            // Checking early if the token has a valid resource id
+            Pair<Boolean, ResourceId> booleanResourceIdPair = ResourceId.tryParse(orderByContinuationToken.getRid());
+            if (!booleanResourceIdPair.getLeft()) {
+                throw new BadRequestException(String.format("INVALID Rid in the continuation token %s for " +
+                                                             "OrderBy~Context.",
+                                                                        orderByContinuationToken.getCompositeContinuationToken().getToken()));
+            }
+
             // At this point the token is valid.
-            ImmutablePair<Integer, FormattedFilterInfo> targetIndexAndFilters = this.GetFiltersForPartitions(
-                    orderByContinuationToken,
-                    partitionKeyRanges,
-                    sortOrders,
-                    orderByExpressions);
+            FormattedFilterInfo formattedFilterInfo = this.getFormattedFilters(orderByExpressions,
+                                                                               orderByContinuationToken
+                                                                                   .getOrderByItems(),
+                                                                               sortOrders,
+                                                                               orderByContinuationToken.getInclusive());
 
-            int targetIndex = targetIndexAndFilters.left;
-            targetRangeToOrderByContinuationTokenMap.put(String.valueOf(targetIndex), orderByContinuationToken);
-            FormattedFilterInfo formattedFilterInfo = targetIndexAndFilters.right;
+            PartitionMapper.PartitionMapping<OrderByContinuationToken> partitionMapping =
+                PartitionMapper.getPartitionMapping(feedRanges, Collections.singletonList(orderByContinuationToken));
 
-            // Left
-            String filterForRangesLeftOfTheTargetRange = formattedFilterInfo.getFilterForRangesLeftOfTheTargetRange();
-            this.initializeRangeWithContinuationTokenAndFilter(partitionKeyRanges,
-                    /* startInclusive */ 0,
-                    /* endExclusive */ targetIndex,
-                    /* continuationToken */ null,
-                    filterForRangesLeftOfTheTargetRange,
-                    initialPageSize);
-
-            // Target
-            String filterForTargetRange = formattedFilterInfo.getFilterForTargetRange();
-            this.initializeRangeWithContinuationTokenAndFilter(partitionKeyRanges,
-                    /* startInclusive */ targetIndex,
-                    /* endExclusive */ targetIndex + 1,
-                    null,
-                    filterForTargetRange,
-                    initialPageSize);
-
-            // Right
-            String filterForRangesRightOfTheTargetRange = formattedFilterInfo.getFilterForRangesRightOfTheTargetRange();
-            this.initializeRangeWithContinuationTokenAndFilter(partitionKeyRanges,
-                    /* startInclusive */ targetIndex + 1,
-                    /* endExclusive */ partitionKeyRanges.size(),
-                    /* continuationToken */ null,
-                    filterForRangesRightOfTheTargetRange,
-                    initialPageSize);
+            initializeWithTokenAndFilter(partitionMapping.getMappingLeftOfTarget(), initialPageSize,
+                                         formattedFilterInfo.filterForRangesLeftOfTheTargetRange);
+            initializeWithTokenAndFilter(partitionMapping.getTargetMapping(), initialPageSize,
+                                         formattedFilterInfo.filterForTargetRange);
+            initializeWithTokenAndFilter(partitionMapping.getMappingRightOfTarget(), initialPageSize,
+                                         formattedFilterInfo.filterForRangesRightOfTheTargetRange);
         }
 
         orderByObservable = OrderByUtils.orderedMerge(resourceType,
@@ -204,51 +191,29 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
                 tracker,
                 documentProducers,
                 queryMetricMap,
-                targetRangeToOrderByContinuationTokenMap);
+                targetRangeToOrderByContinuationTokenMap,
+                clientSideRequestStatisticsList);
     }
 
-    private void initializeRangeWithContinuationTokenAndFilter(
-            List<PartitionKeyRange> partitionKeyRanges,
-            int startInclusive,
-            int endExclusive,
-            String continuationToken,
-            String filter,
-            int initialPageSize) {
-        Map<PartitionKeyRange, String> partitionKeyRangeToContinuationToken = new HashMap<PartitionKeyRange, String>();
-        for (int i = startInclusive; i < endExclusive; i++) {
-            PartitionKeyRange partitionKeyRange = partitionKeyRanges.get(i);
-            partitionKeyRangeToContinuationToken.put(partitionKeyRange,
-                    continuationToken);
+    private void initializeWithTokenAndFilter(Map<FeedRangeEpkImpl, OrderByContinuationToken> rangeToTokenMapping,
+                                              int initialPageSize,
+                                              String filter) {
+        for (Map.Entry<FeedRangeEpkImpl, OrderByContinuationToken> entry :
+            rangeToTokenMapping.entrySet()) {
+            targetRangeToOrderByContinuationTokenMap.put(entry.getKey(), entry.getValue());
+            Map<FeedRangeEpkImpl, String> partitionKeyRangeToContinuationToken = new HashMap<FeedRangeEpkImpl, String>();
+            partitionKeyRangeToContinuationToken.put(entry.getKey(), null);
+            super.initialize(collectionRid,
+                             partitionKeyRangeToContinuationToken,
+                             initialPageSize,
+                             new SqlQuerySpec(querySpec.getQueryText().replace(FormatPlaceHolder,
+                                                                               filter),
+                                              querySpec.getParameters()));
+
         }
-
-        super.initialize(collectionRid,
-                partitionKeyRangeToContinuationToken,
-                initialPageSize,
-                new SqlQuerySpec(querySpec.getQueryText().replace(FormatPlaceHolder,
-                        filter),
-                        querySpec.getParameters()));
     }
 
-    private ImmutablePair<Integer, FormattedFilterInfo> GetFiltersForPartitions(
-            OrderByContinuationToken orderByContinuationToken,
-            List<PartitionKeyRange> partitionKeyRanges,
-            List<SortOrder> sortOrders,
-            Collection<String> orderByExpressions) throws CosmosClientException {
-        // Find the partition key range we left off on
-        int startIndex = this.FindTargetRangeAndExtractContinuationTokens(partitionKeyRanges,
-                orderByContinuationToken.getCompositeContinuationToken().getRange());
-
-        // Get the filters.
-        FormattedFilterInfo formattedFilterInfo = this.GetFormattedFilters(orderByExpressions,
-                orderByContinuationToken.getOrderByItems(),
-                sortOrders,
-                orderByContinuationToken.getInclusive());
-
-        return new ImmutablePair<Integer, FormattedFilterInfo>(startIndex,
-                formattedFilterInfo);
-    }
-
-    private OrderByDocumentQueryExecutionContext<T>.FormattedFilterInfo GetFormattedFilters(
+    private OrderByDocumentQueryExecutionContext<T>.FormattedFilterInfo getFormattedFilters(
             Collection<String> orderByExpressionCollection,
             QueryItem[] orderByItems,
             Collection<SortOrder> sortOrderCollection,
@@ -355,26 +320,28 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
                 right.toString());
     }
 
+    @Override
     protected OrderByDocumentProducer<T> createDocumentProducer(
             String collectionRid,
             PartitionKeyRange targetRange,
             String continuationToken,
             int initialPageSize,
-            FeedOptions feedOptions,
+            CosmosQueryRequestOptions cosmosQueryRequestOptions,
             SqlQuerySpec querySpecForInit,
             Map<String, String> commonRequestHeaders,
-            TriFunction<PartitionKeyRange, String, Integer, RxDocumentServiceRequest> createRequestFunc,
+            TriFunction<FeedRangeEpkImpl, String, Integer, RxDocumentServiceRequest> createRequestFunc,
             Function<RxDocumentServiceRequest, Mono<FeedResponse<T>>> executeFunc,
-            Callable<DocumentClientRetryPolicy> createRetryPolicyFunc) {
+            Callable<DocumentClientRetryPolicy> createRetryPolicyFunc, FeedRangeEpkImpl feedRange) {
         return new OrderByDocumentProducer<T>(consumeComparer,
                 client,
                 collectionRid,
-                feedOptions,
+                cosmosQueryRequestOptions,
                 createRequestFunc,
                 executeFunc,
                 targetRange,
+                feedRange,
                 collectionRid,
-                () -> client.getResetSessionTokenRetryPolicy().getRequestPolicy(),
+                createRetryPolicyFunc,
                 resourceType,
                 correlatedActivityId,
                 initialPageSize,
@@ -390,18 +357,21 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
         private final int maxPageSize;
         private final ConcurrentMap<String, QueryMetrics> queryMetricMap;
         private final Function<OrderByRowResult<T>, String> orderByContinuationTokenCallback;
+        private final List<ClientSideRequestStatistics> clientSideRequestStatisticsList;
         private volatile FeedResponse<OrderByRowResult<T>> previousPage;
 
         public ItemToPageTransformer(
-                RequestChargeTracker tracker,
-                int maxPageSize,
-                ConcurrentMap<String, QueryMetrics> queryMetricsMap,
-                Function<OrderByRowResult<T>, String> orderByContinuationTokenCallback) {
+            RequestChargeTracker tracker,
+            int maxPageSize,
+            ConcurrentMap<String, QueryMetrics> queryMetricsMap,
+            Function<OrderByRowResult<T>, String> orderByContinuationTokenCallback,
+            List<ClientSideRequestStatistics> clientSideRequestStatisticsList) {
             this.tracker = tracker;
             this.maxPageSize = maxPageSize > 0 ? maxPageSize : DEFAULT_PAGE_SIZE;
             this.queryMetricMap = queryMetricsMap;
             this.orderByContinuationTokenCallback = orderByContinuationTokenCallback;
             this.previousPage = null;
+            this.clientSideRequestStatisticsList = clientSideRequestStatisticsList;
         }
 
         private static Map<String, String> headerResponse(
@@ -417,8 +387,12 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
             headers.put(HttpConstants.HttpHeaders.CONTINUATION,
                     orderByContinuationToken);
             return BridgeInternal.createFeedResponseWithQueryMetrics(page.getResults(),
-                    headers,
-                    BridgeInternal.queryMetricsFromFeedResponse(page));
+                headers,
+                BridgeInternal.queryMetricsFromFeedResponse(page),
+                ModelBridgeInternal.getQueryPlanDiagnosticsContext(page),
+                false,
+                false,
+                page.getCosmosDiagnostics());
         }
 
         @Override
@@ -439,10 +413,10 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
                                 orderByRowResults,
                                 headerResponse(tracker.getAndResetCharge()));
                         if (!queryMetricMap.isEmpty()) {
-                            for (String key : queryMetricMap.keySet()) {
+                            for (Map.Entry<String, QueryMetrics> entry : queryMetricMap.entrySet()) {
                                 BridgeInternal.putQueryMetricsIntoMap(feedResponse,
-                                        key,
-                                        queryMetricMap.get(key));
+                                    entry.getKey(),
+                                    entry.getValue());
                             }
                         }
                         return feedResponse;
@@ -495,13 +469,28 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
                             unwrappedResults.add(orderByRowResult.getPayload());
                         }
 
-                        return BridgeInternal.createFeedResponseWithQueryMetrics(unwrappedResults,
-                                feedOfOrderByRowResults.getResponseHeaders(),
-                                BridgeInternal.queryMetricsFromFeedResponse(feedOfOrderByRowResults));
-                    }).switchIfEmpty(Flux.defer(() -> {
+                    FeedResponse<T> feedResponse = BridgeInternal.createFeedResponseWithQueryMetrics(unwrappedResults,
+                        feedOfOrderByRowResults.getResponseHeaders(),
+                        BridgeInternal.queryMetricsFromFeedResponse(feedOfOrderByRowResults),
+                        ModelBridgeInternal.getQueryPlanDiagnosticsContext(feedOfOrderByRowResults),
+                        false,
+                        false, feedOfOrderByRowResults.getCosmosDiagnostics());
+                    BridgeInternal.addClientSideDiagnosticsToFeed(feedResponse.getCosmosDiagnostics(),
+                                                                  clientSideRequestStatisticsList);
+                    return feedResponse;
+                }).switchIfEmpty(Flux.defer(() -> {
                         // create an empty page if there is no result
-                        return Flux.just(BridgeInternal.createFeedResponse(Utils.immutableListOf(),
-                                headerResponse(tracker.getAndResetCharge())));
+                    FeedResponse<T> frp =  BridgeInternal.createFeedResponseWithQueryMetrics(Utils.immutableListOf(),
+                                headerResponse(
+                                    tracker.getAndResetCharge()),
+                            queryMetricMap,
+                            null,
+                            false,
+                            false,
+                            null);
+                    BridgeInternal.addClientSideDiagnosticsToFeed(frp.getCosmosDiagnostics(),
+                                                                  clientSideRequestStatisticsList);
+                    return Flux.just(frp);
                     }));
         }
     }
@@ -539,15 +528,16 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
         //// In more mathematical terms
         //// 1) <x, y> always comes before <z, y> where x < z
         //// 2) <i, j> always come before <i, k> where j < k
-        return this.orderByObservable.compose(new ItemToPageTransformer<T>(tracker,
+        return this.orderByObservable.transformDeferred(new ItemToPageTransformer<T>(tracker,
                 maxPageSize,
                 this.queryMetricMap,
-                this::getContinuationToken));
+                this::getContinuationToken,
+                this.clientSideRequestStatisticsList));
     }
 
     @Override
     public Flux<FeedResponse<T>> executeAsync() {
-        return drainAsync(feedOptions.getMaxItemCount());
+        return drainAsync(ModelBridgeInternal.getMaxItemCountFromQueryRequestOptions(cosmosQueryRequestOptions));
     }
 
     private String getContinuationToken(
@@ -557,7 +547,7 @@ public class OrderByDocumentQueryExecutionContext<T extends Resource>
 
         // CompositeContinuationToken
         String backendContinuationToken = orderByRowResult.getSourceBackendContinuationToken();
-        Range<String> range = orderByRowResult.getSourcePartitionKeyRange().toRange();
+        Range<String> range = orderByRowResult.getSourceRange().getRange();
 
         boolean inclusive = true;
         CompositeContinuationToken compositeContinuationToken = new CompositeContinuationToken(backendContinuationToken,

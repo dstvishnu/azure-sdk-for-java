@@ -3,8 +3,6 @@
 
 package com.azure.cosmos.implementation;
 
-import com.azure.cosmos.models.JsonSerializable;
-import com.azure.cosmos.models.Resource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -28,6 +26,15 @@ public class Document extends Resource {
      */
     public Document(ObjectNode objectNode) {
         super(objectNode);
+    }
+
+    /**
+     * Constructor.
+     *
+     * @param content byte[] encoding of the json string that represents the resource.
+     */
+    public Document(byte[] content) {
+        super(content);
     }
 
     /**
@@ -56,7 +63,7 @@ public class Document extends Resource {
         super(jsonString);
     }
 
-    public static Document FromObject(Object document, ObjectMapper objectMapper) {
+    public static Document fromObject(Object document, ObjectMapper objectMapper) {
         Document typedDocument;
         if (document instanceof Document) {
             typedDocument = (Document) document;
@@ -107,5 +114,35 @@ public class Document extends Resource {
         } else if (super.has(Constants.Properties.TTL)) {
             remove(Constants.Properties.TTL);
         }
+    }
+
+    @Override
+    public String toJson() {
+        return super.toJson();
+    }
+
+    @Override
+    public String getString(String propertyName) {
+        return super.getString(propertyName);
+    }
+
+    @Override
+    public Integer getInt(String propertyName) {
+        return super.getInt(propertyName);
+    }
+
+    @Override
+    public Object get(String propertyName) {
+        return super.get(propertyName);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return super.equals(o);
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
     }
 }

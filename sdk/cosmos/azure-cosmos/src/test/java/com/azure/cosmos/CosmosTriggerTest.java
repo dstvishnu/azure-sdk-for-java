@@ -3,13 +3,14 @@
 
 package com.azure.cosmos;
 
-import com.azure.cosmos.models.CosmosTriggerProperties;
 import com.azure.cosmos.models.CosmosTriggerResponse;
-import com.azure.cosmos.models.FeedOptions;
+import com.azure.cosmos.models.CosmosTriggerProperties;
+import com.azure.cosmos.models.CosmosQueryRequestOptions;
 import com.azure.cosmos.models.SqlQuerySpec;
 import com.azure.cosmos.models.TriggerOperation;
 import com.azure.cosmos.models.TriggerType;
 import com.azure.cosmos.rx.TestSuiteBase;
+import com.azure.cosmos.util.CosmosPagedIterable;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Factory;
@@ -31,7 +32,7 @@ public class CosmosTriggerTest extends TestSuiteBase {
     @BeforeClass(groups = {"simple"}, timeOut = SETUP_TIMEOUT)
     public void before_CosmosTriggerTest() {
         assertThat(this.client).isNull();
-        this.client = clientBuilder().buildClient();
+        this.client = getClientBuilder().buildClient();
         CosmosAsyncContainer asyncContainer = getSharedMultiPartitionCosmosContainer(this.client.asyncClient());
         container = client.getDatabase(asyncContainer.getDatabase().getId()).getContainer(asyncContainer.getId());
     }
@@ -91,19 +92,21 @@ public class CosmosTriggerTest extends TestSuiteBase {
 
         container.getScripts().createTrigger(trigger);
 
-        FeedOptions feedOptions = new FeedOptions();
-        
+        CosmosQueryRequestOptions cosmosQueryRequestOptions = new CosmosQueryRequestOptions();
+
         CosmosPagedIterable<CosmosTriggerProperties> feedResponseIterator3 =
-                container.getScripts().readAllTriggers(feedOptions);
+                container.getScripts().readAllTriggers(cosmosQueryRequestOptions);
         assertThat(feedResponseIterator3.iterator().hasNext()).isTrue();
     }
 
     private CosmosTriggerProperties getCosmosTriggerProperties() {
-        CosmosTriggerProperties trigger = new CosmosTriggerProperties();
-        trigger.setId(UUID.randomUUID().toString());
-        trigger.setBody("function() {var x = 10;}");
+        CosmosTriggerProperties trigger = new CosmosTriggerProperties(
+            UUID.randomUUID().toString(),
+            "function() {var x = 10;}"
+        );
         trigger.setTriggerOperation(TriggerOperation.CREATE);
         trigger.setTriggerType(TriggerType.PRE);
+
         return trigger;
     }
 
@@ -112,15 +115,15 @@ public class CosmosTriggerTest extends TestSuiteBase {
         CosmosTriggerProperties properties = getCosmosTriggerProperties();
         container.getScripts().createTrigger(properties);
         String query = String.format("SELECT * from c where c.id = '%s'", properties.getId());
-        FeedOptions feedOptions = new FeedOptions();
+        CosmosQueryRequestOptions cosmosQueryRequestOptions = new CosmosQueryRequestOptions();
 
         CosmosPagedIterable<CosmosTriggerProperties> feedResponseIterator1 =
-                container.getScripts().queryTriggers(query, feedOptions);
+                container.getScripts().queryTriggers(query, cosmosQueryRequestOptions);
         assertThat(feedResponseIterator1.iterator().hasNext()).isTrue();
 
         SqlQuerySpec querySpec = new SqlQuerySpec(query);
         CosmosPagedIterable<CosmosTriggerProperties> feedResponseIterator2 =
-                container.getScripts().queryTriggers(query, feedOptions);
+                container.getScripts().queryTriggers(query, cosmosQueryRequestOptions);
         assertThat(feedResponseIterator2.iterator().hasNext()).isTrue();
     }
 

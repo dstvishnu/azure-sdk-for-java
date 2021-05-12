@@ -12,6 +12,7 @@ import com.microsoft.azure.arm.resources.models.implementation.GroupableResource
 import com.microsoft.azure.management.recoveryservices.v2016_06_01.Vault;
 import rx.Observable;
 import com.microsoft.azure.management.recoveryservices.v2016_06_01.PatchVault;
+import com.microsoft.azure.management.recoveryservices.v2016_06_01.IdentityData;
 import com.microsoft.azure.management.recoveryservices.v2016_06_01.VaultProperties;
 import com.microsoft.azure.management.recoveryservices.v2016_06_01.Sku;
 import rx.functions.Func1;
@@ -72,6 +73,11 @@ class VaultImpl extends GroupableResourceCoreImpl<Vault, VaultInner, VaultImpl, 
     }
 
     @Override
+    public IdentityData identity() {
+        return this.inner().identity();
+    }
+
+    @Override
     public VaultProperties properties() {
         return this.inner().properties();
     }
@@ -87,6 +93,16 @@ class VaultImpl extends GroupableResourceCoreImpl<Vault, VaultInner, VaultImpl, 
             this.inner().withETag(eTag);
         } else {
             this.updateParameter.withETag(eTag);
+        }
+        return this;
+    }
+
+    @Override
+    public VaultImpl withIdentity(IdentityData identity) {
+        if (isInCreateMode()) {
+            this.inner().withIdentity(identity);
+        } else {
+            this.updateParameter.withIdentity(identity);
         }
         return this;
     }

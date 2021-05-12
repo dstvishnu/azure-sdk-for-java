@@ -3,6 +3,8 @@
 
 package com.azure.cosmos.implementation;
 
+import java.util.Locale;
+
 /**
  * Resource types in the Azure Cosmos DB database service.
  */
@@ -56,7 +58,12 @@ public enum ResourceType {
     Address("Address", -5),
     Key("Key", -2),
     Media("Media", -3),
-    ServiceFabricService("ServiceFabricService", -4);
+    ServiceFabricService("ServiceFabricService", -4),
+
+    ClientEncryptionKey("ClientEncryptionKey", 141),
+
+    //Adding client telemetry resource type, only meant for client side
+    ClientTelemetry("ClientTelemetry", 1001);
 
     private final int value;
     private final String stringValue;
@@ -65,7 +72,7 @@ public enum ResourceType {
     ResourceType(String stringValue, int value) {
         this.stringValue = stringValue;
         this.value = value;
-        this.toLowerStringValue = stringValue.toLowerCase();
+        this.toLowerStringValue = stringValue.toLowerCase(Locale.ROOT);
     }
 
     @Override
@@ -96,7 +103,8 @@ public enum ResourceType {
                 this == ResourceType.Permission ||
                 this == ResourceType.Topology ||
                 this == ResourceType.PartitionKeyRange ||
-                this == ResourceType.DocumentCollection;
+                this == ResourceType.DocumentCollection ||
+                this == ResourceType.ClientEncryptionKey;
     }
 
     /// <summary>

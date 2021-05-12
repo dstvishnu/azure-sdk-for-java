@@ -4,11 +4,12 @@
 package com.azure.cosmos.implementation.routing;
 
 import com.azure.cosmos.BridgeInternal;
-import com.azure.cosmos.models.JsonSerializable;
+import com.azure.cosmos.implementation.JsonSerializable;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.io.Serializable;
 import java.util.Comparator;
 
 @JsonIgnoreProperties({ "empty", "singleValue", "hashMap" })
@@ -47,11 +48,11 @@ public final class Range<T extends Comparable<T>> extends JsonSerializable {
     }
 
     public static <T extends Comparable<T>> Range<T> getPointRange(T value) {
-        return new Range<T>(value, value, true, true);
+        return new Range<>(value, value, true, true);
     }
 
     public static <T extends Comparable<T>> Range<T> getEmptyRange(T value) {
-        return new Range<T>(value, value, true, false);
+        return new Range<>(value, value, true, false);
     }
 
     public static <T extends Comparable<T>> boolean checkOverlapping(Range<T> range1, Range<T> range2) {
@@ -100,20 +101,29 @@ public final class Range<T extends Comparable<T>> extends JsonSerializable {
 
     @JsonProperty("isMinInclusive")
     public boolean isMinInclusive() {
-        return super.getBoolean(Range.IS_MIN_INCLUSIVE_PROPERTY);
+        // isMinInclusive == true is the default - so if the property hasn't been serialized TRUE is the default
+        return !Boolean.FALSE.equals(super.getBoolean(Range.IS_MIN_INCLUSIVE_PROPERTY));
     }
 
     public void setMinInclusive(boolean isMinInclusive) {
-        BridgeInternal.setProperty(this, Range.IS_MIN_INCLUSIVE_PROPERTY, isMinInclusive);
+        if (isMinInclusive) {
+            BridgeInternal.remove(this, Range.IS_MIN_INCLUSIVE_PROPERTY);
+        } else {
+            BridgeInternal.setProperty(this, Range.IS_MIN_INCLUSIVE_PROPERTY, false);
+        }
     }
 
     @JsonProperty("isMaxInclusive")
     public boolean isMaxInclusive() {
-        return super.getBoolean(Range.IS_MAX_INCLUSIVE_PROPERTY);
+        return Boolean.TRUE.equals(super.getBoolean(Range.IS_MAX_INCLUSIVE_PROPERTY));
     }
 
     public void setMaxInclusive(boolean isMaxInclusive) {
-        BridgeInternal.setProperty(this, Range.IS_MAX_INCLUSIVE_PROPERTY, isMaxInclusive);
+        if (isMaxInclusive) {
+            BridgeInternal.setProperty(this, Range.IS_MAX_INCLUSIVE_PROPERTY, true);
+        } else {
+            BridgeInternal.remove(this, Range.IS_MAX_INCLUSIVE_PROPERTY);
+        }
     }
 
     public boolean isSingleValue() {
@@ -158,7 +168,9 @@ public final class Range<T extends Comparable<T>> extends JsonSerializable {
         return hash;
     }
 
-    public static class MinComparator<T extends Comparable<T>> implements Comparator<Range<T>> {
+    public static class MinComparator<T extends Comparable<T>> implements Comparator<Range<T>>, Serializable {
+        private static final long serialVersionUID = 8934048827394132143L;
+
         @Override
         public int compare(Range<T> range1, Range<T> range2) {
             int result = range1.getMin().compareTo(range2.getMin());
@@ -170,7 +182,9 @@ public final class Range<T extends Comparable<T>> extends JsonSerializable {
         }
     }
 
-    public static class MaxComparator<T extends Comparable<T>> implements Comparator<Range<T>> {
+    public static class MaxComparator<T extends Comparable<T>> implements Comparator<Range<T>>, Serializable {
+        private static final long serialVersionUID = -3399886607526260054L;
+
         @Override
         public int compare(Range<T> range1, Range<T> range2) {
             int result = range1.getMax().compareTo(range2.getMax());

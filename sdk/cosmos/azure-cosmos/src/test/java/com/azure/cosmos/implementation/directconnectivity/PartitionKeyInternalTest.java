@@ -3,6 +3,8 @@
 
 package com.azure.cosmos.implementation.directconnectivity;
 
+import com.azure.cosmos.implementation.Utils;
+import com.azure.cosmos.models.PartitionKey;
 import com.azure.cosmos.models.PartitionKeyDefinition;
 import com.azure.cosmos.models.PartitionKeyDefinitionVersion;
 import com.azure.cosmos.models.PartitionKind;
@@ -11,8 +13,8 @@ import com.azure.cosmos.implementation.Undefined;
 import com.azure.cosmos.implementation.routing.PartitionKeyInternal;
 import com.azure.cosmos.implementation.routing.PartitionKeyInternalHelper;
 import com.azure.cosmos.implementation.routing.PartitionKeyInternalUtils;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
+import com.azure.cosmos.implementation.guava25.collect.ImmutableList;
+import com.azure.cosmos.implementation.guava25.collect.Lists;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -44,7 +46,7 @@ public class PartitionKeyInternalTest {
         PartitionKeyInternal partitionKey = PartitionKeyInternal.fromJsonString(json);
         assertThat(partitionKey).isEqualTo(
                 PartitionKeyInternal.fromObjectArray(
-                        Lists.newArrayList(new Object[]{"aa", null, true, false, Undefined.Value(), 5, 5.5}), true));
+                        Lists.newArrayList(new Object[]{"aa", null, true, false, Undefined.value(), 5, 5.5}), true));
 
         assertThat(partitionKey.toJson()).isEqualTo("[\"aa\",null,true,false,{},5.0,5.5]");
     }
@@ -272,7 +274,7 @@ public class PartitionKeyInternalTest {
 
     @Test(groups="unit")
     public void invalidPartitionKeyValueNonStrict() {
-        assertThat(PartitionKeyInternal.fromObjectArray(new Object[]{2, true, Undefined.Value()}, true))
+        assertThat(PartitionKeyInternal.fromObjectArray(new Object[]{2, true, Undefined.value()}, true))
                 .isEqualTo(
                         PartitionKeyInternal.fromObjectArray(new Object[]{2, true, new StringBuilder()}, false));
     }
@@ -294,7 +296,7 @@ public class PartitionKeyInternalTest {
         partitionKeyDefinition.setPaths(Lists.newArrayList("/A", "/B", "/C", "/E", "/F", "/G"));
 
         PartitionKeyInternal partitionKey = PartitionKeyInternal.fromObjectArray(
-                new Object[]{2, true, false, null, Undefined.Value(), "Привет!"}, true);
+                new Object[]{2, true, false, null, Undefined.value(), "Привет!"}, true);
         String effectivePartitionKey = PartitionKeyInternalHelper.getEffectivePartitionKeyString(partitionKey, partitionKeyDefinition);
 
         assertThat(effectivePartitionKey).isEqualTo("05C1D19581B37C05C0000302010008D1A0D281D1B9D1B3D1B6D2832200");
@@ -415,6 +417,12 @@ public class PartitionKeyInternalTest {
         verifyEffectivePartitionKeyEncoding(nonLatin, 101, "0B6D25D07748AB9CA0F523D4BAD146C8", true);
     }
 
+    @Test(groups = "unit")
+    private void serializeNonePartitionKey() {
+        String nonePartitionKey = PartitionKey.NONE.toString();
+        assertThat(nonePartitionKey).isEqualTo("");
+    }
+
     private static void validateEffectivePartitionKeyV2(String partitionKeyRangeJson, String expectedHexEncoding) {
         PartitionKeyInternal partitionKey = PartitionKeyInternal.fromJsonString(partitionKeyRangeJson);
 
@@ -422,7 +430,7 @@ public class PartitionKeyInternalTest {
         partitionKeyDefinition.setKind(PartitionKind.HASH);
         partitionKeyDefinition.setVersion(PartitionKeyDefinitionVersion.V2);
         ArrayList<String> paths = new ArrayList<String>();
-        for (int i = 0; i < partitionKey.getComponents().size(); i++) {
+        for (int i = 0; i < Utils.getCollectionSize(partitionKey.getComponents()); i++) {
             paths.add("/path" + i);
         }
 

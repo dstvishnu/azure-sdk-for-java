@@ -3,6 +3,8 @@
 
 package com.azure.messaging.eventhubs.implementation;
 
+import com.azure.core.amqp.AmqpConnection;
+import com.azure.core.amqp.AmqpRetryOptions;
 import com.azure.core.amqp.AmqpRetryPolicy;
 import com.azure.core.amqp.ClaimsBasedSecurityNode;
 import com.azure.core.amqp.implementation.AmqpConstants;
@@ -19,6 +21,8 @@ import com.azure.messaging.eventhubs.models.EventPosition;
 import com.azure.messaging.eventhubs.models.ReceiveOptions;
 import org.apache.qpid.proton.amqp.Symbol;
 import org.apache.qpid.proton.amqp.UnknownDescribedType;
+import org.apache.qpid.proton.amqp.transport.ReceiverSettleMode;
+import org.apache.qpid.proton.amqp.transport.SenderSettleMode;
 import org.apache.qpid.proton.engine.Session;
 import reactor.core.publisher.Mono;
 
@@ -54,14 +58,15 @@ class EventHubReactorSession extends ReactorSession implements EventHubSession {
      * @param cbsNodeSupplier Mono that returns a reference to the {@link ClaimsBasedSecurityNode}.
      * @param tokenManagerProvider Provides {@link TokenManager} that authorizes the client when performing
      *     operations on the message broker.
-     * @param openTimeout Timeout to wait for the session operation to complete.
+     * @param retryOptions to be used for this session.
+     * @param messageSerializer to be used.
      */
-    EventHubReactorSession(Session session, SessionHandler sessionHandler, String sessionName,
-                           ReactorProvider provider, ReactorHandlerProvider handlerProvider,
-                           Mono<ClaimsBasedSecurityNode> cbsNodeSupplier, TokenManagerProvider tokenManagerProvider,
-                           Duration openTimeout, MessageSerializer messageSerializer) {
-        super(session, sessionHandler, sessionName, provider, handlerProvider, cbsNodeSupplier, tokenManagerProvider,
-            messageSerializer, openTimeout);
+    EventHubReactorSession(AmqpConnection amqpConnection, Session session, SessionHandler sessionHandler,
+        String sessionName, ReactorProvider provider, ReactorHandlerProvider handlerProvider,
+        Mono<ClaimsBasedSecurityNode> cbsNodeSupplier, TokenManagerProvider tokenManagerProvider,
+        AmqpRetryOptions retryOptions, MessageSerializer messageSerializer) {
+        super(amqpConnection, session, sessionHandler, sessionName, provider, handlerProvider, cbsNodeSupplier,
+            tokenManagerProvider, messageSerializer, retryOptions);
     }
 
     /**
@@ -78,7 +83,7 @@ class EventHubReactorSession extends ReactorSession implements EventHubSession {
         Objects.requireNonNull(options, "'options' cannot be null.");
 
         final String eventPositionExpression = getExpression(eventPosition);
-        final Map<Symbol, UnknownDescribedType> filter = new HashMap<>();
+        final Map<Symbol, Object> filter = new HashMap<>();
         filter.put(AmqpConstants.STRING_FILTER, new UnknownDescribedType(AmqpConstants.STRING_FILTER,
             eventPositionExpression));
 
@@ -91,7 +96,9 @@ class EventHubReactorSession extends ReactorSession implements EventHubSession {
             ? new Symbol[]{ENABLE_RECEIVER_RUNTIME_METRIC_NAME}
             : null;
 
-        return createConsumer(linkName, entityPath, timeout, retry, filter, properties, desiredCapabilities);
+        // Use explicit settlement via dispositions (not pre-settled)
+        return createConsumer(linkName, entityPath, timeout, retry, filter, properties, desiredCapabilities,
+            SenderSettleMode.UNSETTLED, ReceiverSettleMode.SECOND);
     }
 
     private String getExpression(EventPosition eventPosition) {

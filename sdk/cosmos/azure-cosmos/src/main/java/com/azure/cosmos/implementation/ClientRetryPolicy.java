@@ -2,12 +2,12 @@
 // Licensed under the MIT License.
 package com.azure.cosmos.implementation;
 
-import com.azure.cosmos.implementation.directconnectivity.WebExceptionUtility;
 import com.azure.cosmos.BridgeInternal;
-import com.azure.cosmos.CosmosClientException;
-import com.azure.cosmos.CosmosResponseDiagnostics;
+import com.azure.cosmos.implementation.apachecommons.collections.list.UnmodifiableList;
+import com.azure.cosmos.implementation.directconnectivity.WebExceptionUtility;
+import com.azure.cosmos.CosmosException;
+import com.azure.cosmos.CosmosDiagnostics;
 import com.azure.cosmos.ThrottlingRetryOptions;
-import org.apache.commons.collections4.list.UnmodifiableList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -28,6 +28,9 @@ public class ClientRetryPolicy extends DocumentClientRetryPolicy {
 
     final static int RetryIntervalInMS = 1000; //Once we detect failover wait for 1 second before retrying request.
     final static int MaxRetryCount = 120;
+    private final static int MaxServiceUnavailableRetryCount = 1;
+    //  Query Plan and Address Refresh will be re-tried 3 times, please check the if condition carefully :)
+    private final static int MAX_QUERY_PLAN_AND_ADDRESS_RETRY_COUNT = 2;
 
     private final DocumentClientRetryPolicy throttlingRetry;
     private final GlobalEndpointManager globalEndpointManager;
@@ -39,22 +42,27 @@ public class ClientRetryPolicy extends DocumentClientRetryPolicy {
     private boolean canUseMultipleWriteLocations;
     private URI locationEndpoint;
     private RetryContext retryContext;
-    private CosmosResponseDiagnostics cosmosResponseDiagnostics;
+    private CosmosDiagnostics cosmosDiagnostics;
     private AtomicInteger cnt = new AtomicInteger(0);
+    private int serviceUnavailableRetryCount;
+    private int queryPlanAddressRefreshCount;
+    private RxDocumentServiceRequest request;
 
-    public ClientRetryPolicy(GlobalEndpointManager globalEndpointManager,
+    public ClientRetryPolicy(DiagnosticsClientContext diagnosticsClientContext,
+                             GlobalEndpointManager globalEndpointManager,
                              boolean enableEndpointDiscovery,
                              ThrottlingRetryOptions throttlingRetryOptions) {
 
-        this.throttlingRetry = new ResourceThrottleRetryPolicy(
-                throttlingRetryOptions.getMaxRetryAttemptsOnThrottledRequests(),
-                throttlingRetryOptions.getMaxRetryWaitTime());
         this.globalEndpointManager = globalEndpointManager;
         this.failoverRetryCount = 0;
         this.enableEndpointDiscovery = enableEndpointDiscovery;
         this.sessionTokenRetryCount = 0;
         this.canUseMultipleWriteLocations = false;
-        this.cosmosResponseDiagnostics = BridgeInternal.createCosmosResponseDiagnostics();
+        this.cosmosDiagnostics = diagnosticsClientContext.createDiagnostics();
+        this.throttlingRetry = new ResourceThrottleRetryPolicy(
+            throttlingRetryOptions.getMaxRetryAttemptsOnThrottledRequests(),
+            throttlingRetryOptions.getMaxRetryWaitTime(),
+            BridgeInternal.getRetryContext(this.getCosmosDiagnostics()));
     }
 
     @Override
@@ -73,9 +81,9 @@ public class ClientRetryPolicy extends DocumentClientRetryPolicy {
 
         this.retryContext = null;
         // Received 403.3 on write region, initiate the endpoint re-discovery
-        CosmosClientException clientException = Utils.as(e, CosmosClientException.class);
-        if (clientException != null && clientException.getCosmosResponseDiagnostics() != null) {
-            this.cosmosResponseDiagnostics = clientException.getCosmosResponseDiagnostics();
+        CosmosException clientException = Utils.as(e, CosmosException.class);
+        if (clientException != null && clientException.getDiagnostics() != null) {
+            this.cosmosDiagnostics = clientException.getDiagnostics();
         }
         if (clientException != null &&
                 Exceptions.isStatusCode(clientException, HttpConstants.StatusCodes.FORBIDDEN) &&
@@ -95,13 +103,26 @@ public class ClientRetryPolicy extends DocumentClientRetryPolicy {
             return this.shouldRetryOnEndpointFailureAsync(true, false);
         }
 
-        // Received Connection error (HttpException), initiate the endpoint rediscovery
+        // Received Connection error (HttpRequestException), initiate the endpoint rediscovery
         if (WebExceptionUtility.isNetworkFailure(e)) {
-            if (this.isReadRequest || WebExceptionUtility.isWebExceptionRetriable(e)) {
-                logger.warn("Endpoint not reachable. Will refresh cache and retry. ", e);
-                return this.shouldRetryOnEndpointFailureAsync(this.isReadRequest, false);
+            if (clientException != null && Exceptions.isSubStatusCode(clientException, HttpConstants.SubStatusCodes.GATEWAY_ENDPOINT_UNAVAILABLE)) {
+                if (this.isReadRequest || WebExceptionUtility.isWebExceptionRetriable(e)) {
+                    logger.warn("Gateway endpoint not reachable. Will refresh cache and retry. ", e);
+                    return this.shouldRetryOnEndpointFailureAsync(this.isReadRequest, false);
+                } else {
+                    return this.shouldNotRetryOnEndpointFailureAsync(this.isReadRequest, false);
+                }
+            } else if (clientException != null &&
+                WebExceptionUtility.isReadTimeoutException(clientException) &&
+                Exceptions.isSubStatusCode(clientException, HttpConstants.SubStatusCodes.GATEWAY_ENDPOINT_READ_TIMEOUT)) {
+                // if operationType is QueryPlan / AddressRefresh then just retry
+                if (this.request.getOperationType() == OperationType.QueryPlan || this.request.isAddressRefresh()) {
+                    return shouldRetryQueryPlanAndAddress();
+                }
             } else {
-                return this.shouldNotRetryOnEndpointFailureAsync(this.isReadRequest, false);
+                logger.warn("Backend endpoint not reachable. ", e);
+                return this.shouldRetryOnBackendServiceUnavailableAsync(this.isReadRequest, WebExceptionUtility
+                                                                                                .isWebExceptionRetriable(e));
             }
         }
 
@@ -112,6 +133,26 @@ public class ClientRetryPolicy extends DocumentClientRetryPolicy {
         }
 
         return this.throttlingRetry.shouldRetry(e);
+    }
+
+    private Mono<ShouldRetryResult> shouldRetryQueryPlanAndAddress() {
+
+        if (this.queryPlanAddressRefreshCount++ > MAX_QUERY_PLAN_AND_ADDRESS_RETRY_COUNT) {
+            logger
+                .warn(
+                    "shouldRetryQueryPlanAndAddress() No more retrying on endpoint {}, operationType = {}, count = {}, " +
+                        "isAddressRefresh = {}",
+                    this.locationEndpoint, this.request.getOperationType(), this.queryPlanAddressRefreshCount, this.request.isAddressRefresh());
+            return Mono.just(ShouldRetryResult.noRetry());
+        }
+
+        logger
+            .warn("shouldRetryQueryPlanAndAddress() Retrying on endpoint {}, operationType = {}, count = {}, " +
+                      "isAddressRefresh = {}",
+                  this.locationEndpoint, this.request.getOperationType(), this.queryPlanAddressRefreshCount, this.request.isAddressRefresh());
+
+        Duration retryDelay = Duration.ZERO;
+        return Mono.just(ShouldRetryResult.retryAfter(retryDelay));
     }
 
     private ShouldRetryResult shouldRetryOnSessionNotAvailable() {
@@ -129,7 +170,7 @@ public class ClientRetryPolicy extends DocumentClientRetryPolicy {
                     // on all locations, then don't retry the request
                     return ShouldRetryResult.noRetry();
                 } else {
-                    this.retryContext = new RetryContext(this.sessionTokenRetryCount - 1, this.sessionTokenRetryCount > 1);
+                    this.retryContext = new RetryContext(this.sessionTokenRetryCount , true);
                     return ShouldRetryResult.retryAfter(Duration.ZERO);
                 }
             } else {
@@ -138,7 +179,7 @@ public class ClientRetryPolicy extends DocumentClientRetryPolicy {
                     // we have already tried this request on the write location
                     return ShouldRetryResult.noRetry();
                 } else {
-                    this.retryContext = new RetryContext(this.sessionTokenRetryCount - 1, false);
+                    this.retryContext = new RetryContext(0, false);
                     return ShouldRetryResult.retryAfter(Duration.ZERO);
                 }
             }
@@ -195,31 +236,72 @@ public class ClientRetryPolicy extends DocumentClientRetryPolicy {
         return this.globalEndpointManager.refreshLocationAsync(null, forceRefresh);
     }
 
+    private Mono<ShouldRetryResult> shouldRetryOnBackendServiceUnavailableAsync(boolean isReadRequest, boolean isWebExceptionRetriable) {
+        if (!isReadRequest && !isWebExceptionRetriable) {
+            logger.warn("shouldRetryOnBackendServiceUnavailableAsync() Not retrying on write with non retriable exception. Retry count = {}", this.serviceUnavailableRetryCount);
+            return Mono.just(ShouldRetryResult.noRetry());
+        }
+
+        if (this.serviceUnavailableRetryCount++ > MaxServiceUnavailableRetryCount) {
+            logger.warn("shouldRetryOnBackendServiceUnavailableAsync() Not retrying. Retry count = {}", this.serviceUnavailableRetryCount);
+            return Mono.just(ShouldRetryResult.noRetry());
+        }
+
+        if (!this.canUseMultipleWriteLocations && !isReadRequest) {
+            // Write requests on single master cannot be retried, no other regions available
+            return Mono.just(ShouldRetryResult.noRetry());
+        }
+
+        int availablePreferredLocations = this.globalEndpointManager.getPreferredLocationCount();
+        if (availablePreferredLocations <= 1) {
+            logger.warn("shouldRetryOnServiceUnavailable() Not retrying. No other regions available for the request. AvailablePreferredLocations = {}", availablePreferredLocations);
+            return Mono.just(ShouldRetryResult.noRetry());
+        }
+
+        logger.warn("shouldRetryOnServiceUnavailable() Retrying. Received on endpoint {}, IsReadRequest = {}", this.locationEndpoint, isReadRequest);
+
+        // Retrying on second PreferredLocations
+        // RetryCount is used as zero-based index
+        this.retryContext = new RetryContext(this.serviceUnavailableRetryCount, true);
+        return Mono.just(ShouldRetryResult.retryAfter(Duration.ZERO));
+    }
+
     @Override
     public void onBeforeSendRequest(RxDocumentServiceRequest request) {
+        this.request = request;
         this.isReadRequest = request.isReadOnlyRequest();
-        this.canUseMultipleWriteLocations = this.globalEndpointManager.CanUseMultipleWriteLocations(request);
+        this.canUseMultipleWriteLocations = this.globalEndpointManager.canUseMultipleWriteLocations(request);
         if (request.requestContext != null) {
-            request.requestContext.cosmosResponseDiagnostics = this.cosmosResponseDiagnostics;
+            request.requestContext.cosmosDiagnostics = this.cosmosDiagnostics;
         }
 
         // clear previous location-based routing directive
         if (request.requestContext != null) {
-            request.requestContext.ClearRouteToLocation();
+            request.requestContext.clearRouteToLocation();
         }
         if (this.retryContext != null) {
             // set location-based routing directive based on request retry context
-            request.requestContext.RouteToLocation(this.retryContext.retryCount, this.retryContext.retryRequestOnPreferredLocations);
+            request.requestContext.routeToLocation(this.retryContext.retryCount, this.retryContext.retryRequestOnPreferredLocations);
         }
 
         // Resolve the endpoint for the request and pin the resolution to the resolved endpoint
         // This enables marking the endpoint unavailability on endpoint failover/unreachability
         this.locationEndpoint = this.globalEndpointManager.resolveServiceEndpoint(request);
         if (request.requestContext != null) {
-            request.requestContext.RouteToLocation(this.locationEndpoint);
+            request.requestContext.routeToLocation(this.locationEndpoint);
         }
     }
-    private class RetryContext {
+
+    @Override
+    public com.azure.cosmos.implementation.RetryContext getRetryContext() {
+        return BridgeInternal.getRetryContext(this.getCosmosDiagnostics());
+    }
+
+    CosmosDiagnostics getCosmosDiagnostics() {
+        return cosmosDiagnostics;
+    }
+
+    private static class RetryContext {
 
         public int retryCount;
         public boolean retryRequestOnPreferredLocations;

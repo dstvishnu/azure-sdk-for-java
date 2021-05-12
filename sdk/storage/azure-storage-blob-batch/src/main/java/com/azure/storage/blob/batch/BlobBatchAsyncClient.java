@@ -13,12 +13,12 @@ import com.azure.core.http.rest.PagedFlux;
 import com.azure.core.http.rest.PagedResponse;
 import com.azure.core.http.rest.Response;
 import com.azure.core.util.Context;
-import com.azure.core.util.IterableStream;
 import com.azure.core.util.FluxUtil;
+import com.azure.core.util.IterableStream;
 import com.azure.core.util.logging.ClientLogger;
 import com.azure.storage.blob.BlobServiceVersion;
-import com.azure.storage.blob.implementation.AzureBlobStorageBuilder;
 import com.azure.storage.blob.implementation.AzureBlobStorageImpl;
+import com.azure.storage.blob.implementation.AzureBlobStorageImplBuilder;
 import com.azure.storage.blob.models.AccessTier;
 import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.models.DeleteSnapshotsOptionType;
@@ -34,6 +34,8 @@ import java.util.function.BiFunction;
 import static com.azure.core.util.FluxUtil.monoError;
 import static com.azure.core.util.FluxUtil.pagedFluxError;
 import static com.azure.core.util.FluxUtil.withContext;
+import static com.azure.core.util.tracing.Tracer.AZ_TRACING_NAMESPACE_KEY;
+import static com.azure.storage.common.Utility.STORAGE_TRACING_NAMESPACE_VALUE;
 
 /**
  * This class provides a client that contains all operations that apply to Azure Storage Blob batching.
@@ -49,13 +51,15 @@ public final class BlobBatchAsyncClient {
     private final ClientLogger logger = new ClientLogger(BlobBatchAsyncClient.class);
 
     private final AzureBlobStorageImpl client;
+    private final boolean containerScoped;
 
-    BlobBatchAsyncClient(String accountUrl, HttpPipeline pipeline, BlobServiceVersion version) {
-        this.client = new AzureBlobStorageBuilder()
-            .url(accountUrl)
+    BlobBatchAsyncClient(String clientUrl, HttpPipeline pipeline, BlobServiceVersion version, boolean containerScoped) {
+        this.client = new AzureBlobStorageImplBuilder()
+            .url(clientUrl)
             .pipeline(pipeline)
             .version(version.getVersion())
-            .build();
+            .buildClient();
+        this.containerScoped = containerScoped;
     }
 
     /**
@@ -111,17 +115,26 @@ public final class BlobBatchAsyncClient {
     @ServiceMethod(returns = ReturnType.SINGLE)
     public Mono<Response<Void>> submitBatchWithResponse(BlobBatch batch, boolean throwOnAnyFailure) {
         try {
-            return withContext(context -> submitBatchWithResponse(batch, throwOnAnyFailure, context));
+            return withContext(context -> submitBatchWithResponse(batch, throwOnAnyFailure,
+                context));
         } catch (RuntimeException ex) {
             return monoError(logger, ex);
         }
     }
 
     Mono<Response<Void>> submitBatchWithResponse(BlobBatch batch, boolean throwOnAnyFailure, Context context) {
+        Context finalContext = context == null ? Context.NONE : context;
         return batch.prepareBlobBatchSubmission()
-            .flatMap(batchOperationInfo -> client.services()
-                .submitBatchWithRestResponseAsync(Flux.fromIterable(batchOperationInfo.getBody()),
-                    batchOperationInfo.getContentLength(), batchOperationInfo.getContentType(), context)
+            .flatMap(batchOperationInfo -> containerScoped
+                ? client.getContainers().submitBatchWithResponseAsync(null,
+                batchOperationInfo.getContentLength(), batchOperationInfo.getContentType(),
+                Flux.fromIterable(batchOperationInfo.getBody()), null, null,
+                finalContext.addData(AZ_TRACING_NAMESPACE_KEY, STORAGE_TRACING_NAMESPACE_VALUE))
+                .flatMap(response ->
+                    BlobBatchHelper.mapBatchResponse(batchOperationInfo, response, throwOnAnyFailure, logger))
+                : client.getServices().submitBatchWithResponseAsync(batchOperationInfo.getContentLength(),
+                batchOperationInfo.getContentType(), Flux.fromIterable(batchOperationInfo.getBody()), null, null,
+                finalContext.addData(AZ_TRACING_NAMESPACE_KEY, STORAGE_TRACING_NAMESPACE_VALUE))
                 .flatMap(response ->
                     BlobBatchHelper.mapBatchResponse(batchOperationInfo, response, throwOnAnyFailure, logger)));
     }
@@ -180,7 +193,6 @@ public final class BlobBatchAsyncClient {
         } catch (RuntimeException ex) {
             return pagedFluxError(logger, ex);
         }
-        //return batchingHelper(blobUrls, (batch, blobUrl) -> batch.setTier(blobUrl, accessTier));
     }
 
     PagedFlux<Response<Void>> setBlobsAccessTierWithTimeout(List<String> blobUrls, AccessTier accessTier,

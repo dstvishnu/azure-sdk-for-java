@@ -3,13 +3,16 @@
 
 package com.azure.storage.blob
 
-import com.azure.core.http.HttpResponse
 import com.azure.core.exception.UnexpectedLengthException
 import com.azure.storage.common.policy.RequestRetryOptions
 import com.azure.storage.common.policy.RetryPolicyType
+import reactor.core.publisher.Mono
+import reactor.test.StepVerifier
+import spock.lang.Retry
 import spock.lang.Unroll
 
 // Tests for package-private functionality.
+@Retry(count = 3)
 class RetryTest extends APISpec {
     static URL retryTestURL = new URL("https://" + RequestRetryTestFactory.RETRY_TEST_PRIMARY_HOST)
     static RequestRetryOptions retryTestOptions = new RequestRetryOptions(RetryPolicyType.EXPONENTIAL, 6, 2,
@@ -20,11 +23,14 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_RETRY_UNTIL_SUCCESS, retryTestOptions)
 
         when:
-        HttpResponse response = retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        response.getStatusCode() == 200
-        retryTestFactory.getTryNumber() == 6
+        StepVerifier.create(responseMono)
+            .assertNext({
+                assert it.getStatusCode() == 200
+                assert retryTestFactory.getTryNumber() == 6
+            }).verifyComplete()
     }
 
     def "Retries until max retries"() {
@@ -32,11 +38,14 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_RETRY_UNTIL_MAX_RETRIES, retryTestOptions)
 
         when:
-        HttpResponse response = retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        response.getStatusCode() == 503
-        retryTestFactory.getTryNumber() == retryTestOptions.getMaxTries()
+        StepVerifier.create(responseMono)
+            .assertNext({
+                assert it.getStatusCode() == 503
+                assert retryTestFactory.getTryNumber() == retryTestOptions.getMaxTries()
+            }).verifyComplete()
     }
 
     def "Retries non retryable"() {
@@ -44,11 +53,14 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_NON_RETRYABLE, retryTestOptions)
 
         when:
-        HttpResponse response = retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        response.getStatusCode() == 400
-        retryTestFactory.getTryNumber() == 1
+        StepVerifier.create(responseMono)
+            .assertNext({
+                assert it.getStatusCode() == 400
+                assert retryTestFactory.getTryNumber() == 1
+            }).verifyComplete()
     }
 
     def "Retries non retryable secondary"() {
@@ -56,11 +68,14 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_NON_RETRYABLE_SECONDARY, retryTestOptions)
 
         when:
-        HttpResponse response = retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        response.getStatusCode() == 400
-        retryTestFactory.getTryNumber() == 2
+        StepVerifier.create(responseMono)
+            .assertNext({
+                assert it.getStatusCode() == 400
+                assert retryTestFactory.getTryNumber() == 2
+            }).verifyComplete()
     }
 
     def "Retries network error"() {
@@ -68,11 +83,14 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_NETWORK_ERROR, retryTestOptions)
 
         when:
-        HttpResponse response = retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        response.getStatusCode() == 200
-        retryTestFactory.getTryNumber() == 3
+        StepVerifier.create(responseMono)
+            .assertNext({
+                assert it.getStatusCode() == 200
+                assert retryTestFactory.getTryNumber() == 3
+            }).verifyComplete()
     }
 
     def "Retries try timeout"() {
@@ -80,11 +98,14 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_TRY_TIMEOUT, retryTestOptions)
 
         when:
-        HttpResponse response = retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        response.getStatusCode() == 200
-        retryTestFactory.getTryNumber() == 3
+        StepVerifier.create(responseMono)
+            .assertNext({
+                assert it.getStatusCode() == 200
+                assert retryTestFactory.getTryNumber() == 3
+            }).verifyComplete()
     }
 
     def "Retries exponential delay"() {
@@ -92,11 +113,14 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_EXPONENTIAL_TIMING, retryTestOptions)
 
         when:
-        HttpResponse response = retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        response.getStatusCode() == 200
-        retryTestFactory.getTryNumber() == 6
+        StepVerifier.create(responseMono)
+            .assertNext({
+                assert it.getStatusCode() == 200
+                assert retryTestFactory.getTryNumber() == 6
+            }).verifyComplete()
     }
 
     def "Retries fixed delay"() {
@@ -104,11 +128,14 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_FIXED_TIMING, retryTestOptions)
 
         when:
-        HttpResponse response = retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        response.getStatusCode() == 200
-        retryTestFactory.getTryNumber() == 4
+        StepVerifier.create(responseMono)
+            .assertNext({
+                assert it.getStatusCode() == 200
+                assert retryTestFactory.getTryNumber() == 4
+            }).verifyComplete()
     }
 
     def "Retries non replyable flux"() {
@@ -116,12 +143,15 @@ class RetryTest extends APISpec {
         RequestRetryTestFactory retryTestFactory = new RequestRetryTestFactory(RequestRetryTestFactory.RETRY_TEST_SCENARIO_NON_REPLAYABLE_FLOWABLE, retryTestOptions)
 
         when:
-        retryTestFactory.send(retryTestURL).block()
+        def responseMono = Mono.defer { retryTestFactory.send(retryTestURL) }
 
         then:
-        def e = thrown(IllegalStateException)
-        e.getMessage().startsWith("The request failed because")
-        e.getCause() instanceof UnexpectedLengthException
+        StepVerifier.create(responseMono)
+            .verifyErrorMatches({
+                it instanceof IllegalStateException
+                it.getMessage().startsWith("The request failed because")
+                it.getCause() instanceof UnexpectedLengthException
+            })
     }
 
     @Unroll

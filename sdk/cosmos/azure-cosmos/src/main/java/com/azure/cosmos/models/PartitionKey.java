@@ -3,12 +3,13 @@
 
 package com.azure.cosmos.models;
 
+import com.azure.cosmos.implementation.ImplementationBridgeHelpers;
 import com.azure.cosmos.implementation.Utils;
 import com.azure.cosmos.implementation.routing.PartitionKeyInternal;
 
 /**
  * Represents a partition key value in the Azure Cosmos DB database service. A
- * partition key identifies the partition where the document is stored in.
+ * partition key identifies the partition where the item is stored in.
  */
 public class PartitionKey {
 
@@ -91,4 +92,17 @@ public class PartitionKey {
         return super.hashCode();
     }
 
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // the following helper/accessor only helps to access this class outside of this package.//
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    static {
+        ImplementationBridgeHelpers.PartitionKeyHelper.setPartitionKeyAccessor(
+            new ImplementationBridgeHelpers.PartitionKeyHelper.PartitionKeyAccessor() {
+                @Override
+                public PartitionKey toPartitionKey(PartitionKeyInternal partitionKeyInternal) {
+                    return new PartitionKey(partitionKeyInternal);
+                }
+            });
+    }
 }

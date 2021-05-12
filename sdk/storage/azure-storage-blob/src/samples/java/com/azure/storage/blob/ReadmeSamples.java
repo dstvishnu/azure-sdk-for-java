@@ -2,13 +2,17 @@
 // Licensed under the MIT License.
 package com.azure.storage.blob;
 
+import com.azure.core.util.BinaryData;
+import com.azure.core.util.polling.SyncPoller;
 import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.azure.storage.blob.models.BlobCopyInfo;
 import com.azure.storage.blob.models.BlobItem;
 import com.azure.storage.blob.specialized.BlockBlobClient;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.Duration;
 
 /**
  * WARNING: MODIFYING THIS FILE WILL REQUIRE CORRESPONDING UPDATES TO README.md FILE. LINE NUMBERS
@@ -31,6 +35,7 @@ public class ReadmeSamples {
     }
 
     public void getBlobServiceClient2() {
+        // Only one "?" is needed here. If the sastoken starts with "?", please removing one "?".
         BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
             .endpoint("<your-storage-account-url>" + "?" + "<your-sasToken>")
             .buildClient();
@@ -49,6 +54,7 @@ public class ReadmeSamples {
     }
 
     public void getBlobContainerClient3() {
+        // Only one "?" is needed here. If the sastoken starts with "?", please removing one "?".
         BlobContainerClient blobContainerClient = new BlobContainerClientBuilder()
             .endpoint("<your-storage-account-url>" + "/" + "mycontainer" + "?" + "<your-sasToken>")
             .buildClient();
@@ -68,6 +74,7 @@ public class ReadmeSamples {
     }
 
     public void getBlobClient3() {
+        // Only one "?" is needed here. If the sastoken starts with "?", please removing one "?".
         BlobClient blobClient = new BlobClientBuilder()
             .endpoint("<your-storage-account-url>" + "/" + "mycontainer" + "/" + "myblob" + "?" + "<your-sasToken>")
             .buildClient();
@@ -98,7 +105,7 @@ public class ReadmeSamples {
 
     public void downloadBlobToStream() {
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-            blobClient.download(outputStream);
+            blobClient.downloadStream(outputStream);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -121,5 +128,23 @@ public class ReadmeSamples {
             .buildClient();
     }
 
+    public void copyBlob() {
+        SyncPoller<BlobCopyInfo, Void> poller = blobClient.beginCopy("<url-to-blob>", Duration.ofSeconds(1));
+        poller.waitForCompletion();
+    }
+
+    public void copyBlob2() {
+        blobClient.copyFromUrl("url-to-blob");
+    }
+
+    public void uploadBinaryDataToBlob() {
+        BlobClient blobClient = blobContainerClient.getBlobClient("myblockblob");
+        String dataSample = "samples";
+        blobClient.upload(BinaryData.fromString(dataSample));
+    }
+
+    public void downloadDataFromBlob() {
+        BinaryData content = blobClient.downloadContent();
+    }
 }
 

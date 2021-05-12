@@ -1,13 +1,9 @@
-resources:
-  repositories:
-    - repository: azure-sdk-build-tools
-      type: git
-      name: internal/azure-sdk-build-tools
-
+# NOTE: Please refer to https://aka.ms/azsdk/engsys/ci-yaml before editing this file.
 trigger:
   branches:
     include:
       - master
+      - main
       - feature/*
       - hotfix/*
       - release/*
@@ -15,14 +11,14 @@ trigger:
     include:
       - sdk/servicebus/
     exclude:
-      - sdk/servicebus/azure
-      - sdk/servicebus/microsoft-azure
-      - sdk/servicebus/ms-azure
+      - sdk/servicebus/azure-messaging-servicebus
+      - sdk/servicebus/microsoft-azure-servicebus
 
 pr:
   branches:
     include:
       - master
+      - main
       - feature/*
       - hotfix/*
       - release/*
@@ -30,9 +26,8 @@ pr:
     include:
       - sdk/servicebus/
     exclude:
-      - sdk/servicebus/azure
-      - sdk/servicebus/microsoft-azure
-      - sdk/servicebus/ms-azure
+      - sdk/servicebus/azure-messaging-servicebus
+      - sdk/servicebus/microsoft-azure-servicebus
 
 stages:
   - template: ../../eng/pipelines/templates/stages/archetype-sdk-management.yml

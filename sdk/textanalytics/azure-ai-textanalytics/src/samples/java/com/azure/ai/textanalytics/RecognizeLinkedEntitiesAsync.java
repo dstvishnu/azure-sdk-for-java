@@ -3,7 +3,7 @@
 
 package com.azure.ai.textanalytics;
 
-import com.azure.ai.textanalytics.models.TextAnalyticsApiKeyCredential;
+import com.azure.core.credential.AzureKeyCredential;
 
 import java.util.concurrent.TimeUnit;
 
@@ -19,22 +19,24 @@ public class RecognizeLinkedEntitiesAsync {
     public static void main(String[] args) {
         // Instantiate a client that will be used to call the service.
         TextAnalyticsAsyncClient client = new TextAnalyticsClientBuilder()
-            .apiKey(new TextAnalyticsApiKeyCredential("{api_key}"))
+            .credential(new AzureKeyCredential("{key}"))
             .endpoint("{endpoint}")
             .buildAsyncClient();
 
-        // The text that needs be analyzed.
-        String text = "Old Faithful is a geyser at Yellowstone Park.";
+        // The document that needs be analyzed.
+        String document = "Old Faithful is a geyser at Yellowstone Park.";
 
-        client.recognizeLinkedEntities(text).subscribe(
-            linkedEntity -> {
+        client.recognizeLinkedEntities(document).subscribe(
+            linkedEntityCollection -> linkedEntityCollection.forEach(linkedEntity -> {
                 System.out.println("Linked Entities:");
-                System.out.printf("Name: %s, entity ID in data source: %s, URL: %s, data source: %s.%n",
+                System.out.printf("Name: %s, entity ID in data source: %s, URL: %s, data source: %s, "
+                        + "Bing Entity Search API ID: %s.%n",
                     linkedEntity.getName(), linkedEntity.getDataSourceEntityId(), linkedEntity.getUrl(),
-                    linkedEntity.getDataSource());
-                linkedEntity.getLinkedEntityMatches().forEach(entityMatch -> System.out.printf(
-                    "Matched entity: %s, score: %f.%n", entityMatch.getText(), entityMatch.getConfidenceScore()));
-            },
+                    linkedEntity.getDataSource(), linkedEntity.getBingEntitySearchApiId());
+                linkedEntity.getMatches().forEach(entityMatch -> System.out.printf(
+                    "Matched entity: %s, confidence score: %f.%n",
+                    entityMatch.getText(), entityMatch.getConfidenceScore()));
+            }),
             error -> System.err.println("There was an error recognizing linked entity of the text." + error),
             () -> System.out.println("Linked entity recognized."));
 

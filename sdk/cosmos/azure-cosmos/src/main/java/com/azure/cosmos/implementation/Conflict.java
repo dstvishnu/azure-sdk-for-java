@@ -3,7 +3,8 @@
 
 package com.azure.cosmos.implementation;
 
-import com.azure.cosmos.models.Resource;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.lang.reflect.InvocationTargetException;
 
@@ -14,6 +15,7 @@ import java.lang.reflect.InvocationTargetException;
  * respective conflict instances  for resources and operations in conflict.
  */
 public final class Conflict extends Resource {
+    private final static ObjectMapper mapper = Utils.getSimpleObjectMapper();
     /**
      * Initialize a conflict object.
      */
@@ -35,8 +37,8 @@ public final class Conflict extends Resource {
      *
      * @return the operation kind.
      */
-    public String getOperationKind() {
-        return super.getString(Constants.Properties.OPERATION_TYPE);
+    public OperationKind getOperationKind() {
+        return OperationKind.fromServiceSerializedFormat(super.getString(Constants.Properties.OPERATION_TYPE));
     }
 
     /**
@@ -44,7 +46,7 @@ public final class Conflict extends Resource {
      *
      * @return the resource type.
      */
-    public String getResouceType() {
+    public String getResourceType() {
         return super.getString(Constants.Properties.RESOURCE_TYPE);
     }
 
@@ -71,6 +73,25 @@ public final class Conflict extends Resource {
             } catch (InstantiationException | IllegalAccessException | IllegalArgumentException
                     | InvocationTargetException | NoSuchMethodException | SecurityException e) {
                 throw new IllegalStateException("Failed to instantiate class object.", e);
+            }
+        } else {
+            return null;
+        }
+    }
+
+    /**
+     * Gets the conflicting resource in the Azure Cosmos DB service.
+     * @param <T> the type of the object.
+     * @param klass The returned type of conflicting resource.
+     * @return The conflicting resource.
+     */
+    public <T > T getItem(Class<T> klass) {
+        String resourceAsString = super.getString(Constants.Properties.CONTENT);
+        if (!Strings.isNullOrEmpty(resourceAsString)) {
+            try {
+                return mapper.readValue(resourceAsString, klass);
+            } catch (JsonProcessingException ex) {
+                throw new IllegalStateException("Failed to deserialize  class object.", ex);
             }
         } else {
             return null;

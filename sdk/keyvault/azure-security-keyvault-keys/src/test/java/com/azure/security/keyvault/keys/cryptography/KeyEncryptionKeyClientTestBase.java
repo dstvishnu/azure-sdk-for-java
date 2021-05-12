@@ -8,28 +8,29 @@ import com.azure.core.exception.HttpResponseException;
 import com.azure.core.http.HttpClient;
 import com.azure.core.http.HttpPipeline;
 import com.azure.core.http.HttpPipelineBuilder;
-import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.core.http.policy.BearerTokenAuthenticationPolicy;
+import com.azure.core.http.policy.ExponentialBackoff;
 import com.azure.core.http.policy.HttpLogDetailLevel;
 import com.azure.core.http.policy.HttpLogOptions;
 import com.azure.core.http.policy.HttpLoggingPolicy;
 import com.azure.core.http.policy.HttpPipelinePolicy;
 import com.azure.core.http.policy.HttpPolicyProviders;
 import com.azure.core.http.policy.RetryPolicy;
+import com.azure.core.http.policy.RetryStrategy;
 import com.azure.core.http.policy.UserAgentPolicy;
 import com.azure.core.test.TestBase;
+import com.azure.core.test.TestMode;
 import com.azure.core.util.Configuration;
 import com.azure.identity.ClientSecretCredentialBuilder;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
-
 
 public abstract class KeyEncryptionKeyClientTestBase extends TestBase {
     private static final String SDK_NAME = "client_name";
@@ -43,18 +44,8 @@ public abstract class KeyEncryptionKeyClientTestBase extends TestBase {
     void beforeTestSetup() {
     }
 
-    <T> T clientSetup(Function<HttpPipeline, T> clientBuilder) {
-        HttpPipeline pipeline = getHttpPipeline();
-
-        T client;
-        client = clientBuilder.apply(pipeline);
-
-        return Objects.requireNonNull(client);
-    }
-
-    HttpPipeline getHttpPipeline() {
+    HttpPipeline getHttpPipeline(HttpClient httpClient, CryptographyServiceVersion serviceVersion) {
         TokenCredential credential = null;
-        HttpClient httpClient;
 
         if (!interceptorManager.isPlaybackMode()) {
             String clientId = System.getenv("ARM_CLIENTID");
@@ -72,46 +63,44 @@ public abstract class KeyEncryptionKeyClientTestBase extends TestBase {
 
         // Closest to API goes first, closest to wire goes last.
         final List<HttpPipelinePolicy> policies = new ArrayList<>();
-        policies.add(new UserAgentPolicy(SDK_NAME, SDK_VERSION,  Configuration.getGlobalConfiguration().clone(), CryptographyServiceVersion.getLatest()));
+        policies.add(
+            new UserAgentPolicy(SDK_NAME, SDK_VERSION, Configuration.getGlobalConfiguration().clone(), serviceVersion));
         HttpPolicyProviders.addBeforeRetryPolicies(policies);
-        policies.add(new RetryPolicy());
+        RetryStrategy strategy = new ExponentialBackoff(5, Duration.ofSeconds(2), Duration.ofSeconds(16));
+        policies.add(new RetryPolicy(strategy));
         if (credential != null) {
             policies.add(new BearerTokenAuthenticationPolicy(credential, CryptographyAsyncClient.KEY_VAULT_SCOPE));
         }
         HttpPolicyProviders.addAfterRetryPolicies(policies);
         policies.add(new HttpLoggingPolicy(new HttpLogOptions().setLogLevel(HttpLogDetailLevel.BODY_AND_HEADERS)));
 
-        if (interceptorManager.isPlaybackMode()) {
-            httpClient = interceptorManager.getPlaybackClient();
-            policies.add(interceptorManager.getRecordPolicy());
-        } else {
-            httpClient = new NettyAsyncHttpClientBuilder().wiretap(true).build();
+        if (getTestMode() == TestMode.RECORD) {
             policies.add(interceptorManager.getRecordPolicy());
         }
 
         return new HttpPipelineBuilder()
             .policies(policies.toArray(new HttpPipelinePolicy[0]))
-            .httpClient(httpClient)
+            .httpClient(httpClient == null ? interceptorManager.getPlaybackClient() : httpClient)
             .build();
     }
 
     @Test
-    public abstract void wrapUnwrapSymmetricAK128();
+    public abstract void wrapUnwrapSymmetricAK128(HttpClient httpClient, CryptographyServiceVersion serviceVersion);
 
     @Test
-    public abstract void wrapUnwrapLocalSymmetricAK128();
+    public abstract void wrapUnwrapSymmetricAK128Local();
 
     @Test
-    public abstract void wrapUnwrapSymmetricAK192();
+    public abstract void wrapUnwrapSymmetricAK192(HttpClient httpClient, CryptographyServiceVersion serviceVersion);
 
     @Test
-    public abstract void wrapUnwrapLocalSymmetricAK192();
+    public abstract void wrapUnwrapSymmetricAK192Local();
 
 
     public String getEndpoint() {
         final String endpoint = interceptorManager.isPlaybackMode()
-                ? "http://localhost:8080"
-                : System.getenv("AZURE_KEYVAULT_ENDPOINT");
+            ? "http://localhost:8080"
+            : System.getenv("AZURE_KEYVAULT_ENDPOINT");
         Objects.requireNonNull(endpoint);
         return endpoint;
     }

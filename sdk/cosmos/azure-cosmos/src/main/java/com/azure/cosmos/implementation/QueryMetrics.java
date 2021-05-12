@@ -6,20 +6,22 @@ import com.azure.cosmos.implementation.query.metrics.ClientSideMetrics;
 import com.azure.cosmos.implementation.query.metrics.FetchExecutionRange;
 import com.azure.cosmos.implementation.query.metrics.QueryMetricsTextWriter;
 import com.azure.cosmos.implementation.query.metrics.SchedulingTimeSpan;
-import org.apache.commons.lang3.tuple.ImmutablePair;
+import com.azure.cosmos.implementation.apachecommons.lang.tuple.ImmutablePair;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Query metrics in the Azure Cosmos database service.
  * This metric represents a moving average for a set of queries whose metrics have been aggregated together.
  */
 public final class QueryMetrics {
-    public static QueryMetrics ZERO = new QueryMetrics(
+    public final static QueryMetrics ZERO = new QueryMetrics(
             new ArrayList<>(), /* */
             0, /* retrievedDocumentCount */
             0, /* retrievedDocumentSize */
@@ -188,8 +190,19 @@ public final class QueryMetrics {
         return QueryMetrics.createFromCollection(queryMetricsList);
     }
 
-    private String toTextString() {
-        return toTextString(0);
+    /**
+     * Utility method to merge two query metrics map.
+     * @param base metrics map which will be updated with new values.
+     * @param addOn metrics map whose values will be merge in base map.
+     */
+    public static void mergeQueryMetricsMap(ConcurrentMap<String, QueryMetrics> base, ConcurrentMap<String, QueryMetrics> addOn) {
+        for (ConcurrentMap.Entry<String, QueryMetrics> entry : addOn.entrySet()) {
+            if (base.containsKey(entry.getKey())) {
+                base.get(entry.getKey()).add(entry.getValue());
+            } else {
+                base.put(entry.getKey(), entry.getValue());
+            }
+        }
     }
 
     private String toTextString(int indentLevel) {
@@ -241,11 +254,6 @@ public final class QueryMetrics {
                 QueryPreparationTimes.createFromCollection(queryPreparationTimesCollection), indexLookupTime, documentLoadTime,
                 vmExecutionTime, RuntimeExecutionTimes.createFromCollection(runtimeExecutionTimesCollection),
                 documentWriteTime, ClientSideMetrics.createFromCollection(clientSideMetricsCollection));
-    }
-
-    private static double getOrDefault(HashMap<String, Double> metrics, String key) {
-        Double doubleReference = metrics.get(key);
-        return doubleReference == null ? 0 : doubleReference;
     }
 
     public static QueryMetrics createFromDelimitedString(String delimitedString) {

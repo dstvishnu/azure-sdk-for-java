@@ -6,6 +6,7 @@ package com.azure.messaging.eventhubs;
 import com.azure.core.amqp.AmqpMessageConstant;
 import com.azure.core.amqp.implementation.MessageSerializer;
 import com.azure.core.exception.AzureException;
+import com.azure.core.util.BinaryData;
 import com.azure.core.util.Context;
 import com.azure.core.util.logging.ClientLogger;
 import com.azure.messaging.eventhubs.implementation.ManagementChannel;
@@ -22,8 +23,10 @@ import org.apache.qpid.proton.amqp.messaging.Section;
 import org.apache.qpid.proton.message.Message;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -134,6 +137,11 @@ class EventHubMessageSerializer implements MessageSerializer {
         }
     }
 
+    @Override
+    public <T> List<T> deserializeList(Message message, Class<T> clazz) {
+        return Collections.singletonList(deserialize(message, clazz));
+    }
+
     @SuppressWarnings("unchecked")
     private <T> T deserializeManagementResponse(Message message, Class<T> deserializedType) {
         if (!(message.getBody() instanceof AmqpValue)) {
@@ -220,7 +228,7 @@ class EventHubMessageSerializer implements MessageSerializer {
         }
 
         final EventData.SystemProperties systemProperties = new EventData.SystemProperties(receiveProperties);
-        final EventData eventData = new EventData(body, systemProperties, Context.NONE);
+        final EventData eventData = new EventData(BinaryData.fromBytes(body), systemProperties, Context.NONE);
         final Map<String, Object> properties = message.getApplicationProperties() == null
             ? new HashMap<>()
             : message.getApplicationProperties().getValue();

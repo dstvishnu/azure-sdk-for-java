@@ -4,7 +4,11 @@
 package com.azure.cosmos.models;
 
 import com.azure.cosmos.implementation.Constants;
-import org.apache.commons.lang3.StringUtils;
+import com.azure.cosmos.implementation.JsonSerializable;
+import com.azure.cosmos.implementation.apachecommons.lang.StringUtils;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.util.Objects;
 
 /**
  * Represents a composite path of the IndexingPolicy in the Azure Cosmos DB database service.
@@ -12,12 +16,15 @@ import org.apache.commons.lang3.StringUtils;
  * "SELECT * FROM c ORDER BY c.age, c.height", then you need to add "/age" and "/height"
  * as composite paths to your composite index.
  */
-public final class CompositePath extends JsonSerializable {
+public final class CompositePath {
+
+    private JsonSerializable jsonSerializable;
+
     /**
      * Constructor.
      */
     public CompositePath() {
-        super();
+        this.jsonSerializable = new JsonSerializable();
     }
 
     /**
@@ -25,8 +32,18 @@ public final class CompositePath extends JsonSerializable {
      *
      * @param jsonString the json string that represents the included path.
      */
-    public CompositePath(String jsonString) {
-        super(jsonString);
+    CompositePath(String jsonString) {
+        this.jsonSerializable = new JsonSerializable(jsonString);
+    }
+
+
+    /**
+     * Constructor.
+     *
+     * @param objectNode the object node that represents the included path.
+     */
+    CompositePath(ObjectNode objectNode) {
+        this.jsonSerializable = new JsonSerializable(objectNode);
     }
 
     /**
@@ -35,7 +52,7 @@ public final class CompositePath extends JsonSerializable {
      * @return the path.
      */
     public String getPath() {
-        return super.getString(Constants.Properties.PATH);
+        return this.jsonSerializable.getString(Constants.Properties.PATH);
     }
 
     /**
@@ -45,7 +62,9 @@ public final class CompositePath extends JsonSerializable {
      * @return the CompositePath.
      */
     public CompositePath setPath(String path) {
-        super.set(Constants.Properties.PATH, path);
+        this.jsonSerializable = new JsonSerializable();
+        this.jsonSerializable.set(Constants.Properties.PATH, path);
+
         return this;
     }
 
@@ -58,14 +77,14 @@ public final class CompositePath extends JsonSerializable {
      * @return the sort order.
      */
     public CompositePathSortOrder getOrder() {
-        String strValue = super.getString(Constants.Properties.ORDER);
+        String strValue = this.jsonSerializable.getString(Constants.Properties.ORDER);
         if (!StringUtils.isEmpty(strValue)) {
             try {
                 return CompositePathSortOrder
-                           .valueOf(StringUtils.upperCase(super.getString(Constants.Properties.ORDER)));
+                           .valueOf(StringUtils.upperCase(this.jsonSerializable.getString(Constants.Properties.ORDER)));
             } catch (IllegalArgumentException e) {
-                this.getLogger().warn("INVALID getIndexingMode getValue {}.",
-                    super.getString(Constants.Properties.ORDER));
+                this.jsonSerializable.getLogger().warn("INVALID getIndexingMode getValue {}.",
+                    this.jsonSerializable.getString(Constants.Properties.ORDER));
                 return CompositePathSortOrder.ASCENDING;
             }
         }
@@ -82,7 +101,30 @@ public final class CompositePath extends JsonSerializable {
      * @return the CompositePath.
      */
     public CompositePath setOrder(CompositePathSortOrder order) {
-        super.set(Constants.Properties.ORDER, order.toString());
+        this.jsonSerializable.set(Constants.Properties.ORDER, order.toString());
         return this;
+    }
+
+    void populatePropertyBag() {
+        this.jsonSerializable.populatePropertyBag();
+    }
+
+    JsonSerializable getJsonSerializable() {
+        return this.jsonSerializable;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+
+        if (o == null || getClass() != o.getClass()) return false;
+
+        CompositePath that = (CompositePath) o;
+        return Objects.equals(getJsonSerializable(), that.getJsonSerializable());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getJsonSerializable());
     }
 }

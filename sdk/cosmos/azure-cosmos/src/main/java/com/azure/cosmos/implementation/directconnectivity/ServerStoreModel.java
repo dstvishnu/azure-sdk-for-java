@@ -4,6 +4,7 @@
 package com.azure.cosmos.implementation.directconnectivity;
 
 
+import com.azure.cosmos.BridgeInternal;
 import com.azure.cosmos.implementation.BadRequestException;
 import com.azure.cosmos.ConsistencyLevel;
 import com.azure.cosmos.implementation.HttpConstants;
@@ -12,6 +13,7 @@ import com.azure.cosmos.implementation.RxDocumentServiceRequest;
 import com.azure.cosmos.implementation.RxDocumentServiceResponse;
 import com.azure.cosmos.implementation.RxStoreModel;
 import com.azure.cosmos.implementation.Strings;
+import com.azure.cosmos.implementation.throughputControl.ThroughputControlStore;
 import reactor.core.publisher.Mono;
 
 public class ServerStoreModel implements RxStoreModel {
@@ -28,8 +30,7 @@ public class ServerStoreModel implements RxStoreModel {
 
         if (!Strings.isNullOrEmpty(requestConsistencyLevelHeaderValue)) {
             ConsistencyLevel requestConsistencyLevel;
-            
-                if ((requestConsistencyLevel = ConsistencyLevel.fromServiceSerializedFormat(requestConsistencyLevelHeaderValue)) == null) {
+            if ((requestConsistencyLevel = BridgeInternal.fromServiceSerializedFormat(requestConsistencyLevelHeaderValue)) == null) {
                 return Mono.error(new BadRequestException(
                     String.format(
                         RMResources.InvalidHeaderValue,
@@ -45,5 +46,10 @@ public class ServerStoreModel implements RxStoreModel {
         }
 
         return this.storeClient.processMessageAsync(request);
+    }
+
+    @Override
+    public void enableThroughputControl(ThroughputControlStore throughputControlStore) {
+        this.storeClient.enableThroughputControl(throughputControlStore);
     }
 }

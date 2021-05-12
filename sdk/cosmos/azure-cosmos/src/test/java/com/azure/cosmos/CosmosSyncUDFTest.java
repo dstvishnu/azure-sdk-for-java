@@ -5,9 +5,10 @@ package com.azure.cosmos;
 
 import com.azure.cosmos.models.CosmosUserDefinedFunctionProperties;
 import com.azure.cosmos.models.CosmosUserDefinedFunctionResponse;
-import com.azure.cosmos.models.FeedOptions;
+import com.azure.cosmos.models.CosmosQueryRequestOptions;
 import com.azure.cosmos.models.SqlQuerySpec;
 import com.azure.cosmos.rx.TestSuiteBase;
+import com.azure.cosmos.util.CosmosPagedIterable;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Factory;
@@ -30,7 +31,7 @@ public class CosmosSyncUDFTest extends TestSuiteBase {
     @BeforeClass(groups = {"simple"}, timeOut = SETUP_TIMEOUT)
     public void before_CosmosSyncUDFTest() {
         assertThat(this.client).isNull();
-        this.client = clientBuilder().buildClient();
+        this.client = getClientBuilder().buildClient();
         CosmosAsyncContainer asyncContainer = getSharedMultiPartitionCosmosContainer(this.client.asyncClient());
         container = client.getDatabase(asyncContainer.getDatabase().getId()).getContainer(asyncContainer.getId());
     }
@@ -93,9 +94,11 @@ public class CosmosSyncUDFTest extends TestSuiteBase {
     }
 
     private CosmosUserDefinedFunctionProperties getCosmosUserDefinedFunctionProperties() {
-        CosmosUserDefinedFunctionProperties udf = new CosmosUserDefinedFunctionProperties();
-        udf.setId(UUID.randomUUID().toString());
-        udf.setBody("function() {var x = 10;}");
+        CosmosUserDefinedFunctionProperties udf = new CosmosUserDefinedFunctionProperties(
+            UUID.randomUUID().toString(),
+            "function() {var x = 10;}"
+        );
+
         return udf;
     }
 
@@ -105,10 +108,10 @@ public class CosmosSyncUDFTest extends TestSuiteBase {
 
         container.getScripts().createUserDefinedFunction(udf);
 
-        FeedOptions feedOptions = new FeedOptions();
-        
+        CosmosQueryRequestOptions cosmosQueryRequestOptions = new CosmosQueryRequestOptions();
+
         CosmosPagedIterable<CosmosUserDefinedFunctionProperties> feedResponseIterator3 =
-                container.getScripts().readAllUserDefinedFunctions(feedOptions);
+                container.getScripts().readAllUserDefinedFunctions(cosmosQueryRequestOptions);
         assertThat(feedResponseIterator3.iterator().hasNext()).isTrue();
     }
 
@@ -118,16 +121,16 @@ public class CosmosSyncUDFTest extends TestSuiteBase {
 
         container.getScripts().createUserDefinedFunction(properties);
         String query = String.format("SELECT * from c where c.id = '%s'", properties.getId());
-        FeedOptions feedOptions = new FeedOptions();
-        
+        CosmosQueryRequestOptions cosmosQueryRequestOptions = new CosmosQueryRequestOptions();
+
 
         CosmosPagedIterable<CosmosUserDefinedFunctionProperties> feedResponseIterator1 =
-                container.getScripts().queryUserDefinedFunctions(query, feedOptions);
+                container.getScripts().queryUserDefinedFunctions(query, cosmosQueryRequestOptions);
         assertThat(feedResponseIterator1.iterator().hasNext()).isTrue();
 
         SqlQuerySpec querySpec = new SqlQuerySpec(query);
         CosmosPagedIterable<CosmosUserDefinedFunctionProperties> feedResponseIterator2 =
-                container.getScripts().queryUserDefinedFunctions(query, feedOptions);
+                container.getScripts().queryUserDefinedFunctions(query, cosmosQueryRequestOptions);
         assertThat(feedResponseIterator2.iterator().hasNext()).isTrue();
     }
 

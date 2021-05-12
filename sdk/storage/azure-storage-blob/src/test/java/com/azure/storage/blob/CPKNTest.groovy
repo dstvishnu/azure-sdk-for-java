@@ -1,7 +1,5 @@
 package com.azure.storage.blob
 
-import com.azure.core.http.policy.HttpLogDetailLevel
-import com.azure.core.http.policy.HttpLogOptions
 import com.azure.core.test.TestMode
 import com.azure.storage.blob.models.BlobContainerEncryptionScope
 import com.azure.storage.blob.models.BlobItem
@@ -12,7 +10,6 @@ import com.azure.storage.blob.models.PageRange
 import com.azure.storage.blob.sas.BlobSasPermission
 import com.azure.storage.blob.sas.BlobServiceSasSignatureValues
 import com.azure.storage.blob.specialized.AppendBlobClient
-import com.azure.storage.blob.specialized.BlobClientBase
 import com.azure.storage.blob.specialized.BlockBlobClient
 import com.azure.storage.blob.specialized.PageBlobClient
 import com.azure.storage.blob.specialized.SpecializedBlobClientBuilder
@@ -31,31 +28,20 @@ class CPKNTest extends APISpec {
     BlockBlobClient cpknBlockBlob
     PageBlobClient cpknPageBlob
     AppendBlobClient cpknAppendBlob
-    BlobClientBase cpknExistingBlob
 
     def setup() {
         es = scope1
         ces = new BlobContainerEncryptionScope().setDefaultEncryptionScope(scope2).setEncryptionScopeOverridePrevented(true)
 
-        builder = new BlobContainerClientBuilder()
-            .endpoint(cc.getBlobContainerUrl().toString())
-            .httpClient(getHttpClient())
-            .httpLogOptions(new HttpLogOptions().setLogLevel(HttpLogDetailLevel.BODY_AND_HEADERS))
-            .credential(primaryCredential)
-
-        if (testMode == TestMode.RECORD && recordLiveMode) {
-            builder.addPolicy(interceptorManager.getRecordPolicy())
-        }
+        builder = getContainerClientBuilder(cc.getBlobContainerUrl())
+            .addPolicy(getRecordPolicy())
+            .credential(env.primaryAccount.credential)
 
         cpknContainer = builder.encryptionScope(es).buildClient()
 
         cpknBlockBlob = cpknContainer.getBlobClient(generateBlobName()).getBlockBlobClient()
         cpknPageBlob = cpknContainer.getBlobClient(generateBlobName()).getPageBlobClient()
         cpknAppendBlob = cpknContainer.getBlobClient(generateBlobName()).getAppendBlobClient()
-
-        def existingBlobSetup = cpknContainer.getBlobClient(generateBlobName()).getBlockBlobClient()
-        existingBlobSetup.upload(defaultInputStream.get(), defaultDataSize)
-        cpknExistingBlob = existingBlobSetup
     }
 
     def "Container create"() {
@@ -164,7 +150,7 @@ class CPKNTest extends APISpec {
             .setPermissions(new BlobSasPermission().setReadPermission(true))
             .setContainerName(cc.getBlobContainerName())
             .setBlobName(blobName)
-            .generateSasQueryParameters(primaryCredential)
+            .generateSasQueryParameters(env.primaryAccount.credential)
             .encode()
         def response = cpknAppendBlob.appendBlockFromUrlWithResponse(sourceBlob.getBlobUrl().toString() + "?" + sas,
             null, null, null, null, null, null)
@@ -215,7 +201,7 @@ class CPKNTest extends APISpec {
             .setPermissions(new BlobSasPermission().setReadPermission(true))
             .setContainerName(cc.getBlobContainerName())
             .setBlobName(blobName)
-            .generateSasQueryParameters(primaryCredential)
+            .generateSasQueryParameters(env.primaryAccount.credential)
             .encode()
 
         def response = cpknPageBlob.uploadPagesFromUrlWithResponse(new PageRange().setStart(0).setEnd(PageBlobClient.PAGE_BYTES - 1),

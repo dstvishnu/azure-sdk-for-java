@@ -5,7 +5,8 @@ package com.azure.cosmos.implementation.directconnectivity;
 
 import com.azure.cosmos.BridgeInternal;
 import com.azure.cosmos.ConsistencyLevel;
-import com.azure.cosmos.CosmosClientException;
+import com.azure.cosmos.CosmosException;
+import com.azure.cosmos.implementation.DiagnosticsClientContext;
 import com.azure.cosmos.implementation.InternalServerErrorException;
 import com.azure.cosmos.implementation.BackoffRetryUtility;
 import com.azure.cosmos.implementation.Configs;
@@ -23,7 +24,8 @@ import com.azure.cosmos.implementation.SessionContainer;
 import com.azure.cosmos.implementation.SessionTokenHelper;
 import com.azure.cosmos.implementation.Strings;
 import com.azure.cosmos.implementation.Utils;
-import org.apache.commons.lang3.math.NumberUtils;
+import com.azure.cosmos.implementation.apachecommons.lang.math.NumberUtils;
+import com.azure.cosmos.implementation.throughputControl.ThroughputControlStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -40,6 +42,7 @@ import java.util.function.Function;
  * StoreClient uses the ReplicatedResourceClient to make requests to the backend.
  */
 public class StoreClient implements IStoreClient {
+    private final DiagnosticsClientContext diagnosticsClientContext;
     private final Logger logger = LoggerFactory.getLogger(StoreClient.class);
     private final GatewayServiceConfigurationReader serviceConfigurationReader;
 
@@ -49,16 +52,19 @@ public class StoreClient implements IStoreClient {
     private final String ZERO_PARTITION_KEY_RANGE = "0";
 
     public StoreClient(
+            DiagnosticsClientContext diagnosticsClientContext,
             Configs configs,
             IAddressResolver addressResolver,
             SessionContainer sessionContainer,
             GatewayServiceConfigurationReader serviceConfigurationReader, IAuthorizationTokenProvider userTokenProvider,
             TransportClient transportClient,
             boolean useMultipleWriteLocations) {
+        this.diagnosticsClientContext = diagnosticsClientContext;
         this.transportClient = transportClient;
         this.sessionContainer = sessionContainer;
         this.serviceConfigurationReader = serviceConfigurationReader;
         this.replicatedResourceClient = new ReplicatedResourceClient(
+            diagnosticsClientContext,
             configs,
             new AddressSelector(addressResolver, configs.getProtocol()),
             sessionContainer,
@@ -67,6 +73,10 @@ public class StoreClient implements IStoreClient {
             userTokenProvider,
             false,
             useMultipleWriteLocations);
+    }
+
+    public void enableThroughputControl(ThroughputControlStore throughputControlStore) {
+        this.replicatedResourceClient.enableThroughputControl(throughputControlStore);
     }
 
     @Override
@@ -89,14 +99,14 @@ public class StoreClient implements IStoreClient {
         storeResponse = storeResponse.doOnError(e -> {
                 try {
                     Throwable unwrappedException = reactor.core.Exceptions.unwrap(e);
-                    CosmosClientException exception = Utils.as(unwrappedException, CosmosClientException.class);
+                    CosmosException exception = Utils.as(unwrappedException, CosmosException.class);
 
                     if (exception == null) {
                         return;
                     }
 
-                    BridgeInternal.recordRetryContext(request.requestContext.cosmosResponseDiagnostics, request);
-                    exception = BridgeInternal.setCosmosResponseDiagnostics(exception, request.requestContext.cosmosResponseDiagnostics);
+                    BridgeInternal.recordRetryContextEndTime(request.requestContext.cosmosDiagnostics);
+                    exception = BridgeInternal.setCosmosDiagnostics(exception, request.requestContext.cosmosDiagnostics);
 
                     handleUnsuccessfulStoreResponse(request, exception);
                 } catch (Throwable throwable) {
@@ -115,7 +125,7 @@ public class StoreClient implements IStoreClient {
         });
     }
 
-    private void handleUnsuccessfulStoreResponse(RxDocumentServiceRequest request, CosmosClientException exception) {
+    private void handleUnsuccessfulStoreResponse(RxDocumentServiceRequest request, CosmosException exception) {
         this.updateResponseHeader(request, exception.getResponseHeaders());
         if ((!ReplicatedResourceClient.isMasterResource(request.getResourceType())) &&
                 (Exceptions.isStatusCode(exception, HttpConstants.StatusCodes.PRECONDITION_FAILED) || Exceptions.isStatusCode(exception, HttpConstants.StatusCodes.CONFLICT) ||
@@ -142,9 +152,9 @@ public class StoreClient implements IStoreClient {
 
         this.updateResponseHeader(request, headers);
         this.captureSessionToken(request, headers);
-        BridgeInternal.recordRetryContext(request.requestContext.cosmosResponseDiagnostics, request);
-        storeResponse.setCosmosResponseDiagnostics(request.requestContext.cosmosResponseDiagnostics);
-        return new RxDocumentServiceResponse(storeResponse);
+        BridgeInternal.recordRetryContextEndTime(request.requestContext.cosmosDiagnostics);
+        storeResponse.setCosmosDiagnostics(request.requestContext.cosmosDiagnostics);
+        return new RxDocumentServiceResponse(this.diagnosticsClientContext, storeResponse);
     }
 
     private long getLSN(Map<String, String> headers) {

@@ -8,9 +8,9 @@ import com.azure.cosmos.CosmosAsyncDatabase;
 import com.azure.cosmos.CosmosClientBuilder;
 import com.azure.cosmos.models.CosmosContainerProperties;
 import com.azure.cosmos.models.CosmosContainerRequestOptions;
-import com.azure.cosmos.CosmosPagedFlux;
+import com.azure.cosmos.util.CosmosPagedFlux;
 import com.azure.cosmos.CosmosDatabaseForTest;
-import com.azure.cosmos.models.FeedOptions;
+import com.azure.cosmos.models.CosmosQueryRequestOptions;
 import com.azure.cosmos.models.PartitionKeyDefinition;
 import com.azure.cosmos.implementation.FeedResponseListValidator;
 import com.azure.cosmos.implementation.FeedResponseValidator;
@@ -45,7 +45,7 @@ public class ReadFeedCollectionsTest extends TestSuiteBase {
     @Test(groups = { "simple" }, timeOut = FEED_TIMEOUT)
     public void readCollections() throws Exception {
 
-        FeedOptions options = new FeedOptions();
+        CosmosQueryRequestOptions options = new CosmosQueryRequestOptions();
 
         int maxItemCount = 2;
 
@@ -67,7 +67,7 @@ public class ReadFeedCollectionsTest extends TestSuiteBase {
 
     @BeforeClass(groups = { "simple" }, timeOut = SETUP_TIMEOUT)
     public void before_ReadFeedCollectionsTest() {
-        client = clientBuilder().buildAsyncClient();
+        client = getClientBuilder().buildAsyncClient();
         createdDatabase = createDatabase(client, databaseId);
 
         for(int i = 0; i < 3; i++) {
@@ -86,7 +86,8 @@ public class ReadFeedCollectionsTest extends TestSuiteBase {
         ArrayList<String> paths = new ArrayList<String>();
         paths.add("/mypk");
         partitionKeyDef.setPaths(paths);
-        CosmosContainerProperties collection = new CosmosContainerProperties(UUID.randomUUID().toString(), partitionKeyDef);
-        return database.createContainer(collection, new CosmosContainerRequestOptions()).block().getContainer();
+        CosmosContainerProperties containerProperties = new CosmosContainerProperties(UUID.randomUUID().toString(), partitionKeyDef);
+        database.createContainer(containerProperties, new CosmosContainerRequestOptions()).block();
+        return database.getContainer(containerProperties.getId());
     }
 }

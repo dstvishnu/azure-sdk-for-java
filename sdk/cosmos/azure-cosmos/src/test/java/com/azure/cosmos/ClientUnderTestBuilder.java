@@ -3,6 +3,7 @@
 package com.azure.cosmos;
 
 import com.azure.cosmos.implementation.RxDocumentClientUnderTest;
+import com.azure.cosmos.implementation.Strings;
 import com.azure.cosmos.implementation.directconnectivity.ReflectionUtils;
 
 import java.net.URI;
@@ -11,16 +12,35 @@ import java.net.URISyntaxException;
 public class ClientUnderTestBuilder extends CosmosClientBuilder {
 
     public ClientUnderTestBuilder(CosmosClientBuilder builder) {
+        if (!Strings.isNullOrEmpty(builder.getKey())) {
+            this.key(builder.getKey());
+        }
+
+        if (!Strings.isNullOrEmpty(builder.getEndpoint())) {
+            this.endpoint(builder.getEndpoint());
+        }
+
+        if (builder.getCredential() != null) {
+            this.credential(builder.getCredential());
+        }
+
         this.configs(builder.configs());
-        this.setConnectionPolicy(builder.getConnectionPolicy());
-        this.setConsistencyLevel(builder.getConsistencyLevel());
-        this.setKey(builder.getKey());
-        this.setEndpoint(builder.getEndpoint());
-        this.setCosmosKeyCredential(builder.getCosmosKeyCredential());
+        this.gatewayMode(builder.getGatewayConnectionConfig());
+        this.directMode(builder.getDirectConnectionConfig());
+        this.consistencyLevel(builder.getConsistencyLevel());
+        this.contentResponseOnWriteEnabled(builder.isContentResponseOnWriteEnabled());
+        this.userAgentSuffix(builder.getUserAgentSuffix());
+        this.throttlingRetryOptions(builder.getThrottlingRetryOptions());
+        this.preferredRegions(builder.getPreferredRegions());
+        this.endpointDiscoveryEnabled(builder.isEndpointDiscoveryEnabled());
+        this.multipleWriteRegionsEnabled(builder.isMultipleWriteRegionsEnabled());
+        this.readRequestsFallbackEnabled(builder.isReadRequestsFallbackEnabled());
+        this.clientTelemetryEnabled(builder.isClientTelemetryEnabled());
     }
 
     @Override
     public CosmosAsyncClient buildAsyncClient() {
+        CosmosAsyncClient cosmosAsyncClient = super.buildAsyncClient();
         RxDocumentClientUnderTest rxClient;
         try {
             rxClient = new RxDocumentClientUnderTest(
@@ -29,11 +49,11 @@ public class ClientUnderTestBuilder extends CosmosClientBuilder {
                 this.getConnectionPolicy(),
                 this.getConsistencyLevel(),
                 this.configs(),
-                this.getCosmosKeyCredential());
+                this.getCredential(),
+                this.isContentResponseOnWriteEnabled());
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException(e.getMessage());
         }
-        CosmosAsyncClient cosmosAsyncClient = super.buildAsyncClient();
         ReflectionUtils.setAsyncDocumentClient(cosmosAsyncClient, rxClient);
         return cosmosAsyncClient;
     }

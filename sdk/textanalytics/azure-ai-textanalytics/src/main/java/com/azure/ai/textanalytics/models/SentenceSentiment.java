@@ -3,52 +3,62 @@
 
 package com.azure.ai.textanalytics.models;
 
-import com.azure.core.annotation.Immutable;
+import com.azure.ai.textanalytics.implementation.SentenceSentimentPropertiesHelper;
+import com.azure.core.util.IterableStream;
 
 /**
- * The {@link SentenceSentiment} model that contains a sentiment label of a sentence, confidence score of the sentiment
- * label, length of the sentence and offset of the sentence within a document.
+ * The {@link SentenceSentiment} model that contains a sentiment label of a sentence, confidence scores of the
+ * sentiment label, sentence opinions, and offset of sentence within a document.
  */
-@Immutable
 public final class SentenceSentiment {
-    private final int graphemeLength;
-    private final int graphemeOffset;
-    private final SentimentConfidenceScores confidenceScores;
+    private final String text;
     private final TextSentiment sentiment;
+    private final SentimentConfidenceScores confidenceScores;
+    private IterableStream<SentenceOpinion> opinions;
+    private int offset;
+    private int length;
 
     /**
      * Creates a {@link SentenceSentiment} model that describes the sentiment analysis of sentence.
      *
+     * @param text The sentence text.
      * @param sentiment The sentiment label of the sentence.
      * @param confidenceScores The sentiment confidence score (Softmax score) between 0 and 1, for each sentiment label.
-     *   Higher values signify higher confidence.
-     * @param graphemeLength The grapheme length of the sentence.
-     * @param graphemeOffset The grapheme offset, start position for the sentence sentiment.
+     * Higher values signify higher confidence.
      */
-    public SentenceSentiment(TextSentiment sentiment, SentimentConfidenceScores confidenceScores,
-        int graphemeLength, int graphemeOffset) {
+    public SentenceSentiment(String text, TextSentiment sentiment, SentimentConfidenceScores confidenceScores) {
+        this.text = text;
         this.sentiment = sentiment;
         this.confidenceScores = confidenceScores;
-        this.graphemeLength = graphemeLength;
-        this.graphemeOffset = graphemeOffset;
+    }
+
+    static {
+        SentenceSentimentPropertiesHelper.setAccessor(
+            new SentenceSentimentPropertiesHelper.SentenceSentimentAccessor() {
+                @Override
+                public void setOpinions(SentenceSentiment sentenceSentiment, IterableStream<SentenceOpinion> opinions) {
+                    sentenceSentiment.setOpinions(opinions);
+                }
+
+                @Override
+                public void setOffset(SentenceSentiment sentenceSentiment, int offset) {
+                    sentenceSentiment.setOffset(offset);
+                }
+
+                @Override
+                public void setLength(SentenceSentiment sentenceSentiment, int length) {
+                    sentenceSentiment.setLength(length);
+                }
+            });
     }
 
     /**
-     * Get the grapheme length of the sentence.
+     * Get the sentence text property.
      *
-     * @return The grapheme length of the sentence.
+     * @return The text property value.
      */
-    public int getGraphemeLength() {
-        return graphemeLength;
-    }
-
-    /**
-     * Get the grapheme offset property: start position for the sentence sentiment.
-     *
-     * @return The grapheme offset of sentence sentiment.
-     */
-    public int getGraphemeOffset() {
-        return graphemeOffset;
+    public String getText() {
+        return this.text;
     }
 
     /**
@@ -61,12 +71,52 @@ public final class SentenceSentiment {
     }
 
     /**
-     * Get the confidence score of the sentiment label. All score values sum up to 1, higher the score value means
-     * higher confidence the sentiment label represents.
+     * Get the confidence score of the sentiment label. All score values sum up to 1, the higher the score, the
+     * higher the confidence in the sentiment.
      *
      * @return The {@link SentimentConfidenceScores}.
      */
     public SentimentConfidenceScores getConfidenceScores() {
         return confidenceScores;
+    }
+
+    /**
+     * Get the sentence opinions of sentence sentiment.
+     * This is only returned if you pass the opinion mining parameter to the analyze sentiment APIs.
+     *
+     * @return The sentence opinions of sentence sentiment.
+     */
+    public IterableStream<SentenceOpinion> getOpinions() {
+        return opinions;
+    }
+
+    /**
+     * Get the offset of sentence. The start position for the sentence in a document.
+     *
+     * @return The offset of sentence.
+     */
+    public int getOffset() {
+        return offset;
+    }
+
+    /**
+     * Get the length of sentence.
+     *
+     * @return The length of sentence.
+     */
+    public int getLength() {
+        return length;
+    }
+
+    private void setOpinions(IterableStream<SentenceOpinion> opinions) {
+        this.opinions = opinions;
+    }
+
+    private void setOffset(int offset) {
+        this.offset = offset;
+    }
+
+    private void setLength(int length) {
+        this.length = length;
     }
 }

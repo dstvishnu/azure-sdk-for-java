@@ -4,8 +4,9 @@
 package com.azure.cosmos.implementation.query;
 
 import com.azure.cosmos.BridgeInternal;
-import com.azure.cosmos.models.JsonSerializable;
+import com.azure.cosmos.implementation.JsonSerializable;
 import com.azure.cosmos.implementation.Utils.ValueHolder;
+import com.azure.cosmos.implementation.routing.Range;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.slf4j.Logger;
@@ -18,7 +19,7 @@ import java.util.List;
  * While this class is public, but it is not part of our published public APIs.
  * This is meant to be internally used only by our sdk.
  */
-public final class OrderByContinuationToken extends JsonSerializable {
+public final class OrderByContinuationToken extends JsonSerializable implements IPartitionedToken {
     private static final String CompositeContinuationTokenPropertyName = "compositeToken";
     private static final String OrderByItemsPropetryName = "orderByItems";
     private static final String RidPropertyName = "rid";
@@ -64,6 +65,9 @@ public final class OrderByContinuationToken extends JsonSerializable {
             if (compositeContinuationToken == null) {
                 throw new IllegalArgumentException("compositeContinuationToken must not be null.");
             }
+            if (compositeContinuationToken.getRange() == null) {
+                throw new IllegalArgumentException("compositeContinuationToken range must not be null.");
+            }
 
             orderByContinuationToken.getOrderByItems();
             orderByContinuationToken.getRid();
@@ -73,8 +77,8 @@ public final class OrderByContinuationToken extends JsonSerializable {
             parsed = true;
         } catch (Exception ex) {
             logger.debug(
-                    "Received exception {} when trying to parse: {}", 
-                    ex.getMessage(), 
+                    "Received exception {} when trying to parse: {}",
+                    ex.getMessage(),
                     serializedOrderByContinuationToken);
             parsed = false;
             outOrderByContinuationToken.v = null;
@@ -112,7 +116,7 @@ public final class OrderByContinuationToken extends JsonSerializable {
     }
 
     public boolean getInclusive() {
-        return super.getBoolean(InclusivePropertyName);
+        return Boolean.TRUE.equals(super.getBoolean(InclusivePropertyName));
     }
 
     private void setCompositeContinuationToken(CompositeContinuationToken compositeContinuationToken) {
@@ -129,5 +133,16 @@ public final class OrderByContinuationToken extends JsonSerializable {
 
     private void setInclusive(boolean inclusive) {
         BridgeInternal.setProperty(this, InclusivePropertyName, inclusive);
+    }
+
+    @Override
+    public String toJson() {
+        return super.toJson();
+    }
+
+    @Override
+    public Range<String> getRange() {
+        // This would never be null, we validate this while parsing the token
+        return this.getCompositeContinuationToken().getRange();
     }
 }

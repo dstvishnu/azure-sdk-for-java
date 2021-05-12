@@ -4,6 +4,7 @@
 package com.azure.storage.file.datalake;
 
 import com.azure.core.http.rest.Response;
+import com.azure.core.util.Context;
 import com.azure.storage.file.datalake.models.DataLakeAccessPolicy;
 import com.azure.storage.file.datalake.models.DataLakeRequestConditions;
 import com.azure.storage.file.datalake.models.DataLakeSignedIdentifier;
@@ -33,6 +34,7 @@ public class FileSystemAsyncClientJavaDocCodeSamples {
     private String leaseId = "leaseId";
     private String proposedId = "proposedId";
     private int leaseDuration = (int) Duration.ofSeconds(30).getSeconds();
+    private String accountName = "accountName";
     private UserDelegationKey userDelegationKey = JavaDocCodeSnippetsHelpers.getUserDelegationKey();
 
     /**
@@ -174,13 +176,19 @@ public class FileSystemAsyncClientJavaDocCodeSamples {
     }
 
     /**
-     * Code snippets for {@link DataLakeFileSystemAsyncClient#createFile(String)} and
+     * Code snippets for {@link DataLakeFileSystemAsyncClient#createFile(String)},
+     * {@link DataLakeFileSystemAsyncClient#createFile(String, boolean)} and
      * {@link DataLakeFileSystemAsyncClient#createFileWithResponse(String, String, String, PathHttpHeaders, Map, DataLakeRequestConditions)}
      */
     public void createFileCodeSnippets() {
         // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createFile#String
         Mono<DataLakeFileAsyncClient> fileClient = client.createFile(fileName);
         // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createFile#String
+
+        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createFile#String-boolean
+        boolean overwrite = false; /* Default value. */
+        Mono<DataLakeFileAsyncClient> fClient = client.createFile(fileName, overwrite);
+        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createFile#String-boolean
 
         // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createFileWithResponse#String-String-String-PathHttpHeaders-Map-DataLakeRequestConditions
         PathHttpHeaders httpHeaders = new PathHttpHeaders()
@@ -215,13 +223,19 @@ public class FileSystemAsyncClientJavaDocCodeSamples {
     }
 
     /**
-     * Code snippets for {@link DataLakeFileSystemAsyncClient#createDirectory(String)} and
+     * Code snippets for {@link DataLakeFileSystemAsyncClient#createDirectory(String)},
+     * {@link DataLakeFileSystemAsyncClient#createDirectory(String, boolean)} and
      * {@link DataLakeFileSystemAsyncClient#createDirectoryWithResponse(String, String, String, PathHttpHeaders, Map, DataLakeRequestConditions)}
      */
     public void createDirectoryCodeSnippets() {
         // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createDirectory#String
-        Mono<DataLakeDirectoryAsyncClient> directoryClient = client.createDirectory(fileName);
+        Mono<DataLakeDirectoryAsyncClient> directoryClient = client.createDirectory(directoryName);
         // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createDirectory#String
+
+        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createDirectory#String-boolean
+        boolean overwrite = false; /* Default value. */
+        Mono<DataLakeDirectoryAsyncClient> dClient = client.createDirectory(directoryName, overwrite);
+        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createDirectory#String-boolean
 
         // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createDirectoryWithResponse#String-String-String-PathHttpHeaders-Map-DataLakeRequestConditions
         PathHttpHeaders httpHeaders = new PathHttpHeaders()
@@ -231,8 +245,9 @@ public class FileSystemAsyncClientJavaDocCodeSamples {
             .setLeaseId(leaseId);
         String permissions = "permissions";
         String umask = "umask";
-        Mono<Response<DataLakeDirectoryAsyncClient>> newDirectoryClient = client.createDirectoryWithResponse(fileName,
-            permissions, umask, httpHeaders, Collections.singletonMap("metadata", "value"), requestConditions);
+        Mono<Response<DataLakeDirectoryAsyncClient>> newDirectoryClient = client.createDirectoryWithResponse(
+            directoryName, permissions, umask, httpHeaders, Collections.singletonMap("metadata", "value"),
+            requestConditions);
         // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.createDirectoryWithResponse#String-String-String-PathHttpHeaders-Map-DataLakeRequestConditions
     }
 
@@ -257,6 +272,23 @@ public class FileSystemAsyncClientJavaDocCodeSamples {
     }
 
     /**
+     * Code snippet for {@link DataLakeFileSystemAsyncClient#undeletePath(String, String)}
+     */
+    public void restorePathCodeSnippet() {
+        String deletedPath = null;
+        String deletionId = null;
+
+        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.undeletePath#String-String
+        client.undeletePath(deletedPath, deletionId).doOnSuccess(response -> System.out.println("Completed undelete"));
+        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.undeletePath#String-String
+
+        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.undeletePathWithResponse#String-String
+        client.undeletePathWithResponse(deletedPath, deletionId)
+            .doOnSuccess(response -> System.out.println("Completed undelete"));
+        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.undeletePathWithResponse#String-String
+    }
+
+    /**
      * Code snippets for {@link DataLakeFileSystemAsyncClient#listPaths()} and
      * {@link DataLakeFileSystemAsyncClient#listPaths(ListPathsOptions)}
      */
@@ -272,6 +304,25 @@ public class FileSystemAsyncClientJavaDocCodeSamples {
 
         client.listPaths(options).subscribe(path -> System.out.printf("Name: %s%n", path.getName()));
         // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.listPaths#ListPathsOptions
+    }
+
+    /**
+     * Code snippets for {@link DataLakeFileSystemAsyncClient#listDeletedPaths()} and
+     * {@link DataLakeFileSystemAsyncClient#listDeletedPaths(String)}
+     */
+    public void listDeletedPaths() {
+        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.listDeletedPaths
+        client.listDeletedPaths().subscribe(path -> System.out.printf("Name: %s%n", path.getPath()));
+        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.listDeletedPaths
+
+        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.listDeletedPaths#String
+        int pageSize = 10;
+        client.listDeletedPaths("PathNamePrefixToMatch")
+            .byPage(pageSize)
+            .subscribe(page ->
+                page.getValue().forEach(path ->
+                    System.out.printf("Name: %s%n", path.getPath())));
+        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.listDeletedPaths#String
     }
 
     /**
@@ -373,5 +424,55 @@ public class FileSystemAsyncClientJavaDocCodeSamples {
         client.generateUserDelegationSas(values, userDelegationKey);
         // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.generateUserDelegationSas#DataLakeServiceSasSignatureValues-UserDelegationKey
     }
+
+    /**
+     * Code snippet for {@link DataLakeFileSystemAsyncClient#generateUserDelegationSas(DataLakeServiceSasSignatureValues, UserDelegationKey, String, Context)}
+     * and {@link DataLakeFileSystemAsyncClient#generateSas(DataLakeServiceSasSignatureValues, Context)}
+     */
+    public void generateSasWithContext() {
+        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.generateSas#DataLakeServiceSasSignatureValues-Context
+        OffsetDateTime expiryTime = OffsetDateTime.now().plusDays(1);
+        FileSystemSasPermission permission = new FileSystemSasPermission().setReadPermission(true);
+
+        DataLakeServiceSasSignatureValues values = new DataLakeServiceSasSignatureValues(expiryTime, permission)
+            .setStartTime(OffsetDateTime.now());
+
+        // Client must be authenticated via StorageSharedKeyCredential
+        client.generateSas(values, new Context("key", "value"));
+        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.generateSas#DataLakeServiceSasSignatureValues-Context
+
+        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.generateUserDelegationSas#DataLakeServiceSasSignatureValues-UserDelegationKey-String-Context
+        OffsetDateTime myExpiryTime = OffsetDateTime.now().plusDays(1);
+        FileSystemSasPermission myPermission = new FileSystemSasPermission().setReadPermission(true);
+
+        DataLakeServiceSasSignatureValues myValues = new DataLakeServiceSasSignatureValues(expiryTime, permission)
+            .setStartTime(OffsetDateTime.now());
+
+        client.generateUserDelegationSas(values, userDelegationKey, accountName, new Context("key", "value"));
+        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.generateUserDelegationSas#DataLakeServiceSasSignatureValues-UserDelegationKey-String-Context
+    }
+
+//    /**
+//     * Code snippet for {@link DataLakeFileSystemAsyncClient#rename(String)}
+//     */
+//    public void renameFileSystem() {
+//        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.rename#String
+//        DataLakeFileSystemAsyncClient fileSystemAsyncClient =
+//            client.rename("newFileSystemName")
+//                .block();
+//        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.rename#String
+//    }
+//
+//    /**
+//     * Code snippet for {@link DataLakeFileSystemAsyncClient#renameWithResponse(FileSystemRenameOptions)}
+//     */
+//    public void renameFileSystemWithResponse() {
+//        // BEGIN: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.renameWithResponse#FileSystemRenameOptions
+//        DataLakeRequestConditions requestConditions = new DataLakeRequestConditions().setLeaseId("lease-id");
+//        DataLakeFileSystemAsyncClient fileSystemAsyncClient = client
+//            .renameWithResponse(new FileSystemRenameOptions( "newFileSystemName")
+//                .setRequestConditions(requestConditions)).block().getValue();
+//        // END: com.azure.storage.file.datalake.DataLakeFileSystemAsyncClient.renameWithResponse#FileSystemRenameOptions
+//    }
 
 }

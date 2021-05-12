@@ -4,12 +4,12 @@ package com.azure.cosmos.implementation.changefeed.implementation;
 
 import com.azure.cosmos.BridgeInternal;
 import com.azure.cosmos.CosmosAsyncContainer;
-import com.azure.cosmos.CosmosClientException;
-import com.azure.cosmos.implementation.CosmosItemProperties;
+import com.azure.cosmos.CosmosException;
+import com.azure.cosmos.implementation.InternalObjectNode;
 import com.azure.cosmos.models.FeedResponse;
+import com.azure.cosmos.models.ModelBridgeInternal;
 import com.azure.cosmos.models.PartitionKey;
 import com.azure.cosmos.models.SqlParameter;
-import com.azure.cosmos.models.SqlParameterList;
 import com.azure.cosmos.models.SqlQuerySpec;
 import com.azure.cosmos.implementation.changefeed.ChangeFeedContextClient;
 import com.azure.cosmos.implementation.changefeed.Lease;
@@ -26,6 +26,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.Collections;
 
 /**
  * Provides flexible way to buildAsyncClient lease manager constructor parameters.
@@ -42,7 +43,7 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
     private LeaseStore leaseStore;
 
 
-    public static LeaseStoreManagerBuilderDefinition Builder() {
+    public static LeaseStoreManagerBuilderDefinition builder() {
         return new LeaseStoreManagerImpl();
     }
 
@@ -136,14 +137,6 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
             this.settings.getLeaseCollectionLink(),
             this.requestOptionsFactory);
 
-        if (this.settings.getLeaseCollectionLink() == null) {
-            throw new IllegalArgumentException("leaseCollectionLink was not specified");
-        }
-
-        if (this.requestOptionsFactory == null) {
-            throw new IllegalArgumentException("requestOptionsFactory was not specified");
-        }
-
         return Mono.just(this);
     }
 
@@ -173,8 +166,8 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
 
         return this.leaseDocumentClient.createItem(this.settings.getLeaseCollectionLink(), documentServiceLease, null, false)
             .onErrorResume( ex -> {
-                if (ex instanceof CosmosClientException) {
-                    CosmosClientException e = (CosmosClientException) ex;
+                if (ex instanceof CosmosException) {
+                    CosmosException e = (CosmosException) ex;
                     if (e.getStatusCode() == ChangeFeedHelper.HTTP_STATUS_CODE_CONFLICT) {
                         logger.info("Some other host created lease for {}.", leaseToken);
                         return Mono.empty();
@@ -188,14 +181,14 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
                     return null;
                 }
 
-                CosmosItemProperties document = BridgeInternal.getProperties(documentResourceResponse);
+                InternalObjectNode document = BridgeInternal.getProperties(documentResourceResponse);
 
                 logger.info("Created lease for partition {}.", leaseToken);
 
                 return documentServiceLease
                     .withId(document.getId())
-                    .withEtag(document.getETag())
-                    .withTs(document.getString(Constants.Properties.LAST_MODIFIED));
+                    .withETag(document.getETag())
+                    .withTs(ModelBridgeInternal.getStringFromJsonSerializable(document, Constants.Properties.LAST_MODIFIED));
             });
     }
 
@@ -207,10 +200,10 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
 
         return this.leaseDocumentClient
             .deleteItem(lease.getId(), new PartitionKey(lease.getId()),
-                        this.requestOptionsFactory.createRequestOptions(lease))
+                        this.requestOptionsFactory.createItemRequestOptions(lease))
             .onErrorResume( ex -> {
-                if (ex instanceof CosmosClientException) {
-                    CosmosClientException e = (CosmosClientException) ex;
+                if (ex instanceof CosmosException) {
+                    CosmosException e = (CosmosException) ex;
                     if (e.getStatusCode() == ChangeFeedHelper.HTTP_STATUS_CODE_NOT_FOUND) {
                         // Ignore - document was already deleted.
                         return Mono.empty();
@@ -234,9 +227,9 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
 
         return this.leaseUpdater.updateLease(
             lease,
-            lease.getId(), 
+            lease.getId(),
             new PartitionKey(lease.getId()),
-            this.requestOptionsFactory.createRequestOptions(lease),
+            this.requestOptionsFactory.createItemRequestOptions(lease),
             serverLease -> {
                 if (serverLease.getOwner() != null && !serverLease.getOwner().equalsIgnoreCase(oldOwner)) {
                     logger.info("Partition {} lease was taken over by owner '{}'", lease.getLeaseToken(), serverLease.getOwner());
@@ -257,11 +250,11 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
 
         return this.leaseDocumentClient.readItem(lease.getId(),
                                                  new PartitionKey(lease.getId()),
-                                                 this.requestOptionsFactory.createRequestOptions(lease),
-                                                 CosmosItemProperties.class)
+                                                 this.requestOptionsFactory.createItemRequestOptions(lease),
+                                                 InternalObjectNode.class)
             .onErrorResume( ex -> {
-                if (ex instanceof CosmosClientException) {
-                    CosmosClientException e = (CosmosClientException) ex;
+                if (ex instanceof CosmosException) {
+                    CosmosException e = (CosmosException) ex;
                     if (e.getStatusCode() == ChangeFeedHelper.HTTP_STATUS_CODE_NOT_FOUND) {
                         logger.info("Partition {} failed to renew lease. The lease is gone already.", lease.getLeaseToken());
                         throw new LeaseLostException(lease);
@@ -273,9 +266,9 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
             .map( documentResourceResponse -> ServiceItemLease.fromDocument(BridgeInternal.getProperties(documentResourceResponse)))
             .flatMap( refreshedLease -> this.leaseUpdater.updateLease(
                 refreshedLease,
-                lease.getId(), 
+                lease.getId(),
                 new PartitionKey(lease.getId()),
-                this.requestOptionsFactory.createRequestOptions(lease),
+                this.requestOptionsFactory.createItemRequestOptions(lease),
                 serverLease ->
                 {
                     if (serverLease.getOwner() != null) {
@@ -303,11 +296,11 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
 
         return this.leaseDocumentClient.readItem(lease.getId(),
                                                  new PartitionKey(lease.getId()),
-                                                 this.requestOptionsFactory.createRequestOptions(lease),
-                                                 CosmosItemProperties.class)
+                                                 this.requestOptionsFactory.createItemRequestOptions(lease),
+                                                 InternalObjectNode.class)
             .onErrorResume( ex -> {
-                if (ex instanceof CosmosClientException) {
-                    CosmosClientException e = (CosmosClientException) ex;
+                if (ex instanceof CosmosException) {
+                    CosmosException e = (CosmosException) ex;
                     if (e.getStatusCode() == ChangeFeedHelper.HTTP_STATUS_CODE_NOT_FOUND) {
                         logger.info("Partition {} failed to renew lease. The lease is gone already.", lease.getLeaseToken());
                         throw new LeaseLostException(lease);
@@ -319,9 +312,9 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
             .map( documentResourceResponse -> ServiceItemLease.fromDocument(BridgeInternal.getProperties(documentResourceResponse)))
             .flatMap( refreshedLease -> this.leaseUpdater.updateLease(
                 refreshedLease,
-                lease.getId(), 
+                lease.getId(),
                 new PartitionKey(lease.getId()),
-                this.requestOptionsFactory.createRequestOptions(lease),
+                this.requestOptionsFactory.createItemRequestOptions(lease),
                 serverLease ->
                 {
                     if (!serverLease.getOwner().equalsIgnoreCase(lease.getOwner())) {
@@ -347,9 +340,9 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
 
         return this.leaseUpdater.updateLease(
             lease,
-            lease.getId(), 
+            lease.getId(),
             new PartitionKey(lease.getId()),
-            this.requestOptionsFactory.createRequestOptions(lease),
+            this.requestOptionsFactory.createItemRequestOptions(lease),
             serverLease -> {
                 if (!serverLease.getOwner().equalsIgnoreCase(lease.getOwner())) {
                     logger.info("Partition '{}' lease was taken over by owner '{}'", lease.getLeaseToken(), serverLease.getOwner());
@@ -372,13 +365,13 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
 
         return this.leaseDocumentClient.readItem(lease.getId(),
                                                  new PartitionKey(lease.getId()),
-                                                 this.requestOptionsFactory.createRequestOptions(lease),
-                                                 CosmosItemProperties.class)
+                                                 this.requestOptionsFactory.createItemRequestOptions(lease),
+                                                 InternalObjectNode.class)
             .map( documentResourceResponse -> ServiceItemLease.fromDocument(BridgeInternal.getProperties(documentResourceResponse)))
             .flatMap( refreshedLease -> this.leaseUpdater.updateLease(
                 refreshedLease,
                 lease.getId(), new PartitionKey(lease.getId()),
-                this.requestOptionsFactory.createRequestOptions(lease),
+                this.requestOptionsFactory.createItemRequestOptions(lease),
                 serverLease -> {
                     if (serverLease.getOwner() != null && !serverLease.getOwner().equalsIgnoreCase(lease.getOwner())) {
                         logger.info("Partition {} lease was taken over by owner '{}'", lease.getLeaseToken(), serverLease.getOwner());
@@ -414,28 +407,6 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
         return this.leaseStore.releaseInitializationLock();
     }
 
-    private Mono<ServiceItemLease> tryGetLease(Lease lease) {
-
-        return this.leaseDocumentClient.readItem(lease.getId(),
-                                                 new PartitionKey(lease.getId()),
-                                                 this.requestOptionsFactory.createRequestOptions(lease),
-                                                 CosmosItemProperties.class)
-            .onErrorResume( ex -> {
-                if (ex instanceof CosmosClientException) {
-                    CosmosClientException e = (CosmosClientException) ex;
-                    if (e.getStatusCode() == ChangeFeedHelper.HTTP_STATUS_CODE_NOT_FOUND) {
-                        return Mono.empty();
-                    }
-                }
-
-                return Mono.error(ex);
-            })
-            .map( documentResourceResponse -> {
-                if (documentResourceResponse == null) return null;
-                return ServiceItemLease.fromDocument(BridgeInternal.getProperties(documentResourceResponse));
-            });
-    }
-
     private Flux<ServiceItemLease> listDocuments(String prefix) {
         if (prefix == null || prefix.isEmpty())  {
             throw new IllegalArgumentException("prefix");
@@ -446,13 +417,13 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
         param.setValue(prefix);
         SqlQuerySpec querySpec = new SqlQuerySpec(
             "SELECT * FROM c WHERE STARTSWITH(c.id, @PartitionLeasePrefix)",
-            new SqlParameterList(param));
+            Collections.singletonList(param));
 
-        Flux<FeedResponse<CosmosItemProperties>> query = this.leaseDocumentClient.queryItems(
+        Flux<FeedResponse<InternalObjectNode>> query = this.leaseDocumentClient.queryItems(
             this.settings.getLeaseCollectionLink(),
             querySpec,
-            this.requestOptionsFactory.createFeedOptions(),
-            CosmosItemProperties.class);
+            this.requestOptionsFactory.createQueryRequestOptions(),
+            InternalObjectNode.class);
 
         return query.flatMap( documentFeedResponse -> Flux.fromIterable(documentFeedResponse.getResults()))
             .map(ServiceItemLease::fromDocument);
@@ -466,5 +437,5 @@ public class LeaseStoreManagerImpl implements LeaseStoreManager, LeaseStoreManag
     private String getPartitionLeasePrefix() {
         return this.settings.getContainerNamePrefix() + LEASE_STORE_MANAGER_LEASE_SUFFIX;
     }
-    
+
 }

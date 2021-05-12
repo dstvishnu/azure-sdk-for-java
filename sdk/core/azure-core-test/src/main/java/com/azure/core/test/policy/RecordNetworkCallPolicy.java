@@ -3,16 +3,20 @@
 
 package com.azure.core.test.policy;
 
+import com.azure.core.http.ContentType;
 import com.azure.core.http.HttpHeader;
 import com.azure.core.http.HttpHeaders;
 import com.azure.core.http.HttpPipelineCallContext;
 import com.azure.core.http.HttpPipelineNextPolicy;
 import com.azure.core.http.HttpResponse;
 import com.azure.core.http.policy.HttpPipelinePolicy;
-import com.azure.core.util.UrlBuilder;
+import com.azure.core.test.TestMode;
+import com.azure.core.test.implementation.ImplUtils;
 import com.azure.core.test.models.NetworkCallError;
 import com.azure.core.test.models.NetworkCallRecord;
 import com.azure.core.test.models.RecordedData;
+import com.azure.core.test.models.RecordingRedactor;
+import com.azure.core.util.UrlBuilder;
 import com.azure.core.util.logging.ClientLogger;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Mono;
@@ -22,14 +26,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.function.Function;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -49,12 +51,11 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
     private static final String BODY = "Body";
     private static final String SIG = "sig";
 
-    private static final Pattern DELEGATIONKEY_KEY_PATTERN = Pattern.compile("(?:<Value>)(.*)(?:</Value>)");
-    private static final Pattern DELEGATIONKEY_CLIENTID_PATTERN = Pattern.compile("(?:<SignedOid>)(.*)(?:</SignedOid>)");
-    private static final Pattern DELEGATIONKEY_TENANTID_PATTERN = Pattern.compile("(?:<SignedTid>)(.*)(?:</SignedTid>)");
+    private static final TestMode TEST_MODE = ImplUtils.getTestMode();
 
     private final ClientLogger logger = new ClientLogger(RecordNetworkCallPolicy.class);
     private final RecordedData recordedData;
+    private final RecordingRedactor redactor;
 
     /**
      * Creates a policy that records network calls into {@code recordedData}.
@@ -62,12 +63,28 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
      * @param recordedData The record to persist network calls into.
      */
     public RecordNetworkCallPolicy(RecordedData recordedData) {
-        Objects.requireNonNull(recordedData, "'recordedData' cannot be null.");
+        this(recordedData, Collections.emptyList());
+    }
+
+    /**
+     * Creates a policy that records network calls into {@code recordedData} by redacting sensitive information by
+     * applying the provided redactor functions.
+     * @param recordedData The record to persist network calls into.
+     * @param redactors The custom redactor functions to apply to redact sensitive information from recorded data.
+     */
+    public RecordNetworkCallPolicy(RecordedData recordedData, List<Function<String, String>> redactors) {
         this.recordedData = recordedData;
+        redactor = new RecordingRedactor(redactors);
+
     }
 
     @Override
     public Mono<HttpResponse> process(HttpPipelineCallContext context, HttpPipelineNextPolicy next) {
+        // Test is running in LIVE mode so it won't be able to record the network call, skip recording code.
+        if (TEST_MODE == TestMode.LIVE) {
+            return next.process();
+        }
+
         final NetworkCallRecord networkCallRecord = new NetworkCallRecord();
         Map<String, String> headers = new HashMap<>();
 
@@ -82,6 +99,7 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
 
         // Remove sensitive information such as SAS token signatures from the recording.
         UrlBuilder urlBuilder = UrlBuilder.parse(context.getHttpRequest().getUrl());
+        redactedAccountName(urlBuilder);
         if (urlBuilder.getQuery().containsKey(SIG)) {
             urlBuilder.setQueryParameter(SIG, "REDACTED");
         }
@@ -95,7 +113,7 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
             }).flatMap(httpResponse -> {
                 final HttpResponse bufferedResponse = httpResponse.buffer();
 
-                return extractResponseData(bufferedResponse).map(responseData -> {
+                return extractResponseData(bufferedResponse, redactor, logger).map(responseData -> {
                     networkCallRecord.setResponse(responseData);
                     String body = responseData.get(BODY);
 
@@ -112,7 +130,14 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
             });
     }
 
-    private void captureRequestHeaders(HttpHeaders requestHeaders, Map<String, String> captureHeaders,
+    private static void redactedAccountName(UrlBuilder urlBuilder) {
+        String[] hostParts = urlBuilder.getHost().split("\\.");
+        hostParts[0] = "REDACTED";
+
+        urlBuilder.setHost(String.join(".", hostParts));
+    }
+
+    private static void captureRequestHeaders(HttpHeaders requestHeaders, Map<String, String> captureHeaders,
         String... headerNames) {
         for (String headerName : headerNames) {
             if (requestHeaders.getValue(headerName) != null) {
@@ -121,7 +146,8 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
         }
     }
 
-    private Mono<Map<String, String>> extractResponseData(final HttpResponse response) {
+    private static Mono<Map<String, String>> extractResponseData(final HttpResponse response,
+        final RecordingRedactor redactor, final ClientLogger logger) {
         final Map<String, String> responseData = new HashMap<>();
         responseData.put(STATUS_CODE, Integer.toString(response.getStatusCode()));
 
@@ -156,18 +182,19 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
                 responseData.put(BODY, content);
                 return responseData;
             });
-        } else if (contentType.equalsIgnoreCase("application/octet-stream")) {
+        } else if (contentType.equalsIgnoreCase(ContentType.APPLICATION_OCTET_STREAM)
+            || contentType.equalsIgnoreCase("avro/binary")) {
             return response.getBodyAsByteArray().switchIfEmpty(Mono.just(new byte[0])).map(bytes -> {
                 if (bytes.length == 0) {
                     return responseData;
                 }
 
-                responseData.put(BODY, Arrays.toString(bytes));
+                responseData.put(BODY, Base64.getEncoder().encodeToString(bytes));
                 return responseData;
             });
         } else if (contentType.contains("json") || response.getHeaderValue(CONTENT_ENCODING) == null) {
             return response.getBodyAsString(StandardCharsets.UTF_8).switchIfEmpty(Mono.just("")).map(content -> {
-                responseData.put(BODY, redactUserDelegationKey(content));
+                responseData.put(BODY, redactor.redact(content));
                 return responseData;
             });
         } else {
@@ -190,7 +217,7 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
                             bytesRead = gis.read(buffer, position, buffer.length);
                         }
 
-                        content = new String(output.toByteArray(), StandardCharsets.UTF_8);
+                        content = output.toString("UTF-8");
                     } catch (IOException e) {
                         throw logger.logExceptionAsWarning(Exceptions.propagate(e));
                     }
@@ -205,25 +232,5 @@ public class RecordNetworkCallPolicy implements HttpPipelinePolicy {
                 return responseData;
             });
         }
-    }
-
-    private String redactUserDelegationKey(String content) {
-        if (!content.contains("UserDelegationKey")) {
-            return content;
-        }
-
-        content = redactionReplacement(content, DELEGATIONKEY_KEY_PATTERN.matcher(content), Base64.getEncoder().encodeToString("REDACTED".getBytes(StandardCharsets.UTF_8)));
-        content = redactionReplacement(content, DELEGATIONKEY_CLIENTID_PATTERN.matcher(content), UUID.randomUUID().toString());
-        content = redactionReplacement(content, DELEGATIONKEY_TENANTID_PATTERN.matcher(content), UUID.randomUUID().toString());
-
-        return content;
-    }
-
-    private String redactionReplacement(String content, Matcher matcher, String replacement) {
-        while (matcher.find()) {
-            content = content.replace(matcher.group(1), replacement);
-        }
-
-        return content;
     }
 }

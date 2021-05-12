@@ -6,8 +6,8 @@ import com.azure.cosmos.CosmosAsyncClient;
 import com.azure.cosmos.CosmosAsyncContainer;
 import com.azure.cosmos.CosmosClientBuilder;
 import com.azure.cosmos.models.CosmosConflictProperties;
-import com.azure.cosmos.CosmosPagedFlux;
-import com.azure.cosmos.models.FeedOptions;
+import com.azure.cosmos.util.CosmosPagedFlux;
+import com.azure.cosmos.models.CosmosQueryRequestOptions;
 import com.azure.cosmos.models.FeedResponse;
 import com.azure.cosmos.implementation.HttpConstants;
 import org.testng.annotations.AfterClass;
@@ -35,12 +35,11 @@ public class CosmosAsyncConflictTest extends TestSuiteBase {
     public void readConflicts_toBlocking_toIterator() {
 
         int requestPageSize = 3;
-        FeedOptions options = new FeedOptions();
-        options.setMaxItemCount(requestPageSize);
+        CosmosQueryRequestOptions options = new CosmosQueryRequestOptions();
 
         CosmosPagedFlux<CosmosConflictProperties> conflictReadFeedFlux = createdCollection.readAllConflicts(options);
 
-        Iterator<FeedResponse<CosmosConflictProperties>> it = conflictReadFeedFlux.byPage().toIterable().iterator();
+        Iterator<FeedResponse<CosmosConflictProperties>> it = conflictReadFeedFlux.byPage(requestPageSize).toIterable().iterator();
 
         int expectedNumberOfConflicts = 0;
 
@@ -61,7 +60,7 @@ public class CosmosAsyncConflictTest extends TestSuiteBase {
 
     @BeforeClass(groups = { "simple" }, timeOut = SETUP_TIMEOUT)
     public void before_CosmosAsyncConflictTest() {
-        client = clientBuilder().buildAsyncClient();
+        client = getClientBuilder().buildAsyncClient();
         createdCollection = getSharedMultiPartitionCosmosContainer(client);
     }
 
@@ -73,6 +72,6 @@ public class CosmosAsyncConflictTest extends TestSuiteBase {
     @BeforeMethod(groups = { "simple" }, timeOut = SETUP_TIMEOUT)
     public void beforeMethod() {
         safeClose(client);
-        client = clientBuilder().buildAsyncClient();
+        client = getClientBuilder().buildAsyncClient();
     }
 }

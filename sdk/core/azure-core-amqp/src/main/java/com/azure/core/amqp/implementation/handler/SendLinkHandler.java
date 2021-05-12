@@ -9,39 +9,51 @@ import org.apache.qpid.proton.engine.EndpointState;
 import org.apache.qpid.proton.engine.Event;
 import org.apache.qpid.proton.engine.Link;
 import org.apache.qpid.proton.engine.Sender;
-import reactor.core.publisher.DirectProcessor;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
-import reactor.core.publisher.UnicastProcessor;
+import reactor.core.publisher.Sinks;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class SendLinkHandler extends LinkHandler {
-    private final String senderName;
+    private final String linkName;
+    private final String entityPath;
     private final AtomicBoolean isFirstFlow = new AtomicBoolean(true);
-    private final UnicastProcessor<Integer> creditProcessor = UnicastProcessor.create();
-    private final DirectProcessor<Delivery> deliveryProcessor = DirectProcessor.create();
-    private final FluxSink<Integer> creditSink = creditProcessor.sink();
-    private final FluxSink<Delivery> deliverySink = deliveryProcessor.sink();
+    private final AtomicBoolean isTerminated = new AtomicBoolean();
+    private final Sinks.Many<Integer> creditProcessor = Sinks.many().unicast().onBackpressureBuffer();
+    private final Sinks.Many<Delivery> deliveryProcessor = Sinks.many().multicast().onBackpressureBuffer();
 
-    public SendLinkHandler(String connectionId, String hostname, String senderName, String entityPath) {
+    public SendLinkHandler(String connectionId, String hostname, String linkName, String entityPath) {
         super(connectionId, hostname, entityPath, new ClientLogger(SendLinkHandler.class));
-        this.senderName = senderName;
+        this.linkName = linkName;
+        this.entityPath = entityPath;
+    }
+
+    public String getLinkName() {
+        return linkName;
     }
 
     public Flux<Integer> getLinkCredits() {
-        return creditProcessor;
+        return creditProcessor.asFlux();
     }
 
     public Flux<Delivery> getDeliveredMessages() {
-        return deliveryProcessor;
+        return deliveryProcessor.asFlux();
     }
 
     @Override
     public void close() {
-        creditSink.complete();
-        deliverySink.complete();
+        if (isTerminated.getAndSet(true)) {
+            return;
+        }
+
+        creditProcessor.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
+
+        deliveryProcessor.emitComplete((signalType, emitResult) -> {
+            logger.verbose("connectionId[{}] linkName[{}] result[{}] Unable to emit complete on deliverySink.",
+                getConnectionId(), linkName, emitResult);
+            return false;
+        });
         super.close();
     }
 
@@ -49,27 +61,29 @@ public class SendLinkHandler extends LinkHandler {
     public void onLinkLocalOpen(Event event) {
         final Link link = event.getLink();
         if (link instanceof Sender) {
-            logger.verbose("onLinkLocalOpen senderName[{}], linkName[{}], localTarget[{}]",
-                senderName, link.getName(), link.getTarget());
+            logger.verbose("onLinkLocalOpen connectionId[{}], entityPath[{}], linkName[{}], localTarget[{}]",
+                getConnectionId(), entityPath, link.getName(), link.getTarget());
         }
     }
 
     @Override
     public void onLinkRemoteOpen(Event event) {
         final Link link = event.getLink();
-        if (link instanceof Sender) {
-            if (link.getRemoteTarget() != null) {
-                logger.info("onLinkRemoteOpen senderName[{}], linkName[{}], remoteTarget[{}]",
-                    senderName, link.getName(), link.getRemoteTarget());
+        if (!(link instanceof Sender)) {
+            return;
+        }
 
-                if (isFirstFlow.getAndSet(false)) {
-                    onNext(EndpointState.ACTIVE);
-                }
-            } else {
-                logger.info("onLinkRemoteOpen senderName[{}], linkName[{}], remoteTarget[null], remoteSource[null], "
-                        + "action[waitingForError]",
-                    senderName, link.getName());
+        if (link.getRemoteTarget() != null) {
+            logger.info("onLinkRemoteOpen connectionId[{}], entityPath[{}], linkName[{}], remoteTarget[{}]",
+                getConnectionId(), entityPath, link.getName(), link.getRemoteTarget());
+
+            if (isFirstFlow.getAndSet(false)) {
+                onNext(EndpointState.ACTIVE);
             }
+        } else {
+            logger.info("onLinkRemoteOpen connectionId[{}], entityPath[{}], linkName[{}], remoteTarget[null],"
+                    + " remoteSource[null], action[waitingForError]",
+                getConnectionId(), entityPath, link.getName());
         }
     }
 
@@ -80,10 +94,15 @@ public class SendLinkHandler extends LinkHandler {
         }
 
         final Sender sender = event.getSender();
-        creditSink.next(sender.getRemoteCredit());
+        final int credits = sender.getRemoteCredit();
+        creditProcessor.emitNext(credits, (signalType, emitResult) -> {
+            logger.verbose("connectionId[{}] linkName[{}] result[{}] Unable to emit credits [{}].",
+                getConnectionId(), linkName, emitResult, credits);
+            return false;
+        });
 
-        logger.verbose("onLinkFlow senderName[{}], linkName[{}], unsettled[{}], credit[{}]",
-            senderName, sender.getName(), sender.getUnsettled(), sender.getCredit());
+        logger.verbose("onLinkFlow connectionId[{}] linkName[{}] unsettled[{}] credit[{}]",
+            getConnectionId(), sender.getName(), sender.getUnsettled(), sender.getCredit());
     }
 
     @Override
@@ -91,15 +110,21 @@ public class SendLinkHandler extends LinkHandler {
         Delivery delivery = event.getDelivery();
 
         while (delivery != null) {
-            Sender sender = (Sender) delivery.getLink();
+            final Sender sender = (Sender) delivery.getLink();
+            final String deliveryTag = new String(delivery.getTag(), StandardCharsets.UTF_8);
 
-            logger.verbose("onDelivery senderName[{}], linkName[{}], unsettled[{}], credit[{}], deliveryState[{}], "
-                    + "delivery.isBuffered[{}], delivery.id[{}]",
-                senderName, sender.getName(), sender.getUnsettled(), sender.getRemoteCredit(),
-                delivery.getRemoteState(), delivery.isBuffered(), new String(delivery.getTag(),
-                    StandardCharsets.UTF_8));
+            logger.verbose("onDelivery connectionId[{}] linkName[{}] unsettled[{}] credit[{}],"
+                    + " deliveryState[{}] delivery.isBuffered[{}] delivery.id[{}]",
+                getConnectionId(), sender.getName(), sender.getUnsettled(), sender.getRemoteCredit(),
+                delivery.getRemoteState(), delivery.isBuffered(), deliveryTag);
 
-            deliverySink.next(delivery);
+            deliveryProcessor.emitNext(delivery, (signalType, emitResult) -> {
+                logger.warning("connectionId[{}] linkName[{}] result[{}] Unable to emit delivery [{}].",
+                    getConnectionId(), linkName, emitResult, deliveryTag);
+
+                return emitResult == Sinks.EmitResult.FAIL_OVERFLOW;
+            });
+
             delivery.settle();
             delivery = sender.current();
         }

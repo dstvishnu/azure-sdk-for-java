@@ -7,7 +7,6 @@ import com.puppycrawl.tools.checkstyle.api.AbstractCheck;
 import com.puppycrawl.tools.checkstyle.api.DetailAST;
 import com.puppycrawl.tools.checkstyle.api.FullIdent;
 import com.puppycrawl.tools.checkstyle.api.TokenTypes;
-
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Queue;
@@ -25,10 +24,12 @@ import java.util.Queue;
  */
 public class ThrowFromClientLoggerCheck extends AbstractCheck {
     private static final String LOGGER_LOG_EXCEPTION_AS_ERROR = "logger.logExceptionAsError";
+    private static final String LOGGER_LOG_THROWABLE_AS_ERROR = "logger.logThrowableAsError";
     private static final String LOGGER_LOG_EXCEPTION_AS_WARNING = "logger.logExceptionAsWarning";
+    private static final String LOGGER_LOG_THROWABLE_AS_WARNING = "logger.logThrowableAsWarning";
     private static final String THROW_LOGGER_EXCEPTION_MESSAGE = "Directly throwing an exception is disallowed. Must "
-        + "throw through ''ClientLogger'' API, either of ''%s'' or ''%s'' where ''logger'' is type of ClientLogger "
-        + "from Azure Core package.";
+        + "throw through ''ClientLogger'' API, either of ''%s'', ''%s'', ''%s'', or ''%s'' where ''logger'' is type of "
+        + "ClientLogger from Azure Core package.";
 
     // A LIFO queue stores the static status of class, skip this ThrowFromClientLoggerCheck if the class is static
     private final Queue<Boolean> classStaticDeque = Collections.asLifoQueue(new ArrayDeque<>());
@@ -99,16 +100,20 @@ public class ThrowFromClientLoggerCheck extends AbstractCheck {
                     token.findFirstToken(TokenTypes.EXPR).findFirstToken(TokenTypes.METHOD_CALL);
                 if (methodCallToken == null) {
                     log(token, String.format(THROW_LOGGER_EXCEPTION_MESSAGE, LOGGER_LOG_EXCEPTION_AS_ERROR,
-                        LOGGER_LOG_EXCEPTION_AS_WARNING));
+                        LOGGER_LOG_THROWABLE_AS_ERROR, LOGGER_LOG_EXCEPTION_AS_WARNING,
+                        LOGGER_LOG_THROWABLE_AS_WARNING));
                     return;
                 }
 
                 String methodCallName =
                     FullIdent.createFullIdent(methodCallToken.findFirstToken(TokenTypes.DOT)).getText();
-                if (!LOGGER_LOG_EXCEPTION_AS_ERROR.equals(methodCallName)
-                    && !LOGGER_LOG_EXCEPTION_AS_WARNING.equals(methodCallName)) {
+                if (!LOGGER_LOG_EXCEPTION_AS_ERROR.equalsIgnoreCase(methodCallName)
+                    && !LOGGER_LOG_THROWABLE_AS_ERROR.equalsIgnoreCase(methodCallName)
+                    && !LOGGER_LOG_EXCEPTION_AS_WARNING.equalsIgnoreCase(methodCallName)
+                    && !LOGGER_LOG_THROWABLE_AS_WARNING.equalsIgnoreCase(methodCallName)) {
                     log(token, String.format(THROW_LOGGER_EXCEPTION_MESSAGE, LOGGER_LOG_EXCEPTION_AS_ERROR,
-                        LOGGER_LOG_EXCEPTION_AS_WARNING));
+                        LOGGER_LOG_THROWABLE_AS_ERROR, LOGGER_LOG_EXCEPTION_AS_WARNING,
+                        LOGGER_LOG_THROWABLE_AS_WARNING));
                 }
                 break;
             default:

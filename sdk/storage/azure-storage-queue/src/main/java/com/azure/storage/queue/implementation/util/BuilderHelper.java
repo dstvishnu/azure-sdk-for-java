@@ -3,11 +3,15 @@
 
 package com.azure.storage.queue.implementation.util;
 
+import com.azure.core.credential.AzureSasCredential;
 import com.azure.core.credential.TokenCredential;
 import com.azure.core.http.HttpClient;
+import com.azure.core.http.HttpHeaders;
 import com.azure.core.http.HttpPipeline;
 import com.azure.core.http.HttpPipelineBuilder;
 import com.azure.core.http.policy.AddDatePolicy;
+import com.azure.core.http.policy.AddHeadersPolicy;
+import com.azure.core.http.policy.AzureSasCredentialPolicy;
 import com.azure.core.http.policy.BearerTokenAuthenticationPolicy;
 import com.azure.core.http.policy.HttpLogOptions;
 import com.azure.core.http.policy.HttpLoggingPolicy;
@@ -15,14 +19,15 @@ import com.azure.core.http.policy.HttpPipelinePolicy;
 import com.azure.core.http.policy.HttpPolicyProviders;
 import com.azure.core.http.policy.RequestIdPolicy;
 import com.azure.core.http.policy.UserAgentPolicy;
+import com.azure.core.util.ClientOptions;
 import com.azure.core.util.Configuration;
 import com.azure.core.util.CoreUtils;
 import com.azure.core.util.logging.ClientLogger;
 import com.azure.storage.common.StorageSharedKeyCredential;
 import com.azure.storage.common.implementation.Constants;
-import com.azure.storage.common.implementation.StorageImplUtils;
-import com.azure.storage.common.implementation.credentials.SasTokenCredential;
-import com.azure.storage.common.implementation.policy.SasTokenCredentialPolicy;
+import com.azure.storage.common.implementation.SasImplUtils;
+import com.azure.storage.common.implementation.credentials.CredentialValidator;
+import com.azure.storage.common.policy.MetadataValidationPolicy;
 import com.azure.storage.common.policy.RequestRetryOptions;
 import com.azure.storage.common.policy.RequestRetryPolicy;
 import com.azure.storage.common.policy.ResponseValidationPolicyBuilder;
@@ -36,7 +41,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 /**
  * This class provides helper methods for common builder patterns.
@@ -46,9 +50,20 @@ public final class BuilderHelper {
         CoreUtils.getProperties("azure-storage-queue.properties");
     private static final String SDK_NAME = "name";
     private static final String SDK_VERSION = "version";
+    private static final String CLIENT_NAME = PROPERTIES.getOrDefault(SDK_NAME, "UnknownName");
+    private static final String CLIENT_VERSION = PROPERTIES.getOrDefault(SDK_VERSION, "UnknownVersion");
 
-    private static final Pattern IP_URL_PATTERN = Pattern
-        .compile("(?:\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})|(?:localhost)");
+    /**
+     * Determines whether or not the passed authority is IP style, that is it is of the format
+     * {@code <host>:<port>}.
+     *
+     * @param authority The authority of a URL.
+     * @throws MalformedURLException If the authority is malformed.
+     * @return Whether the authority is IP style.
+     */
+    public static boolean determineAuthorityIsIpStyle(String authority) throws MalformedURLException {
+        return new URL("http://" +  authority).getPort() != -1;
+    }
 
     /**
      * Parse the endpoint for the account name, queue name, and SAS token query parameters.
@@ -63,7 +78,7 @@ public final class BuilderHelper {
             URL url = new URL(endpoint);
             QueueUrlParts parts = new QueueUrlParts().setScheme(url.getProtocol());
 
-            if (IP_URL_PATTERN.matcher(url.getHost()).find()) {
+            if (determineAuthorityIsIpStyle(url.getAuthority())) {
                 // URL is using an IP pattern of http://127.0.0.1:10000/accountName/queueName
                 // or http://localhost:10000/accountName/queueName
                 String path = url.getPath();
@@ -106,7 +121,7 @@ public final class BuilderHelper {
 
             // Attempt to get the SAS token from the URL passed
             String sasToken = new CommonSasQueryParameters(
-                StorageImplUtils.parseQueryStringSplitValues(url.getQuery()), false).encode();
+                SasImplUtils.parseQueryString(url.getQuery()), false).encode();
             if (!CoreUtils.isNullOrEmpty(sasToken)) {
                 parts.setSasToken(sasToken);
             }
@@ -123,37 +138,60 @@ public final class BuilderHelper {
      *
      * @param storageSharedKeyCredential {@link StorageSharedKeyCredential} if present.
      * @param tokenCredential {@link TokenCredential} if present.
-     * @param sasTokenCredential {@link SasTokenCredential} if present.
+     * @param azureSasCredential {@link AzureSasCredential} if present.
+     * @param sasToken The SAS token if present.
      * @param endpoint The endpoint for the client.
      * @param retryOptions Retry options to set in the retry policy.
      * @param logOptions Logging options to set in the logging policy.
+     * @param clientOptions Client options.
      * @param httpClient HttpClient to use in the builder.
-     * @param additionalPolicies Additional {@link HttpPipelinePolicy policies} to set in the pipeline.
+     * @param perCallPolicies Additional {@link HttpPipelinePolicy policies} to set in the pipeline per call.
+     * @param perRetryPolicies Additional {@link HttpPipelinePolicy policies} to set in the pipeline per retry.
      * @param configuration Configuration store contain environment settings.
      * @param logger {@link ClientLogger} used to log any exception.
      * @return A new {@link HttpPipeline} from the passed values.
      */
-    public static HttpPipeline buildPipeline(StorageSharedKeyCredential storageSharedKeyCredential,
-        TokenCredential tokenCredential, SasTokenCredential sasTokenCredential, String endpoint,
-        RequestRetryOptions retryOptions, HttpLogOptions logOptions, HttpClient httpClient,
-        List<HttpPipelinePolicy> additionalPolicies, Configuration configuration, ClientLogger logger) {
+    public static HttpPipeline buildPipeline(
+        StorageSharedKeyCredential storageSharedKeyCredential,
+        TokenCredential tokenCredential, AzureSasCredential azureSasCredential, String sasToken, String endpoint,
+        RequestRetryOptions retryOptions, HttpLogOptions logOptions, ClientOptions clientOptions, HttpClient httpClient,
+        List<HttpPipelinePolicy> perCallPolicies, List<HttpPipelinePolicy> perRetryPolicies,
+        Configuration configuration, ClientLogger logger) {
+
+        CredentialValidator.validateSingleCredentialIsPresent(
+            storageSharedKeyCredential, tokenCredential, azureSasCredential, sasToken, logger);
 
         // Closest to API goes first, closest to wire goes last.
         List<HttpPipelinePolicy> policies = new ArrayList<>();
 
-        policies.add(getUserAgentPolicy(configuration));
+        policies.add(getUserAgentPolicy(configuration, logOptions, clientOptions));
         policies.add(new RequestIdPolicy());
+
+        policies.addAll(perCallPolicies);
+        HttpPolicyProviders.addBeforeRetryPolicies(policies);
+        policies.add(new RequestRetryPolicy(retryOptions));
+
         policies.add(new AddDatePolicy());
+
+        // We need to place this policy right before the credential policy since headers may affect the string to sign
+        // of the request.
+        HttpHeaders headers = new HttpHeaders();
+        clientOptions.getHeaders().forEach(header -> headers.put(header.getName(), header.getValue()));
+        if (headers.getSize() > 0) {
+            policies.add(new AddHeadersPolicy(headers));
+        }
+        policies.add(new MetadataValidationPolicy());
 
         HttpPipelinePolicy credentialPolicy;
         if (storageSharedKeyCredential != null) {
             credentialPolicy =  new StorageSharedKeyCredentialPolicy(storageSharedKeyCredential);
         } else if (tokenCredential != null) {
             httpsValidation(tokenCredential, "bearer token", endpoint, logger);
-            credentialPolicy =  new BearerTokenAuthenticationPolicy(tokenCredential,
-                String.format("%s/.default", endpoint));
-        } else if (sasTokenCredential != null) {
-            credentialPolicy =  new SasTokenCredentialPolicy(sasTokenCredential);
+            credentialPolicy =  new BearerTokenAuthenticationPolicy(tokenCredential, Constants.STORAGE_SCOPE);
+        } else if (azureSasCredential != null) {
+            credentialPolicy = new AzureSasCredentialPolicy(azureSasCredential, false);
+        } else if (sasToken != null) {
+            credentialPolicy = new AzureSasCredentialPolicy(new AzureSasCredential(sasToken), false);
         } else {
             credentialPolicy =  null;
         }
@@ -162,10 +200,7 @@ public final class BuilderHelper {
             policies.add(credentialPolicy);
         }
 
-        HttpPolicyProviders.addBeforeRetryPolicies(policies);
-        policies.add(new RequestRetryPolicy(retryOptions));
-
-        policies.addAll(additionalPolicies);
+        policies.addAll(perRetryPolicies);
 
         HttpPolicyProviders.addAfterRetryPolicies(policies);
 
@@ -197,15 +232,17 @@ public final class BuilderHelper {
      * Creates a {@link UserAgentPolicy} using the default blob module name and version.
      *
      * @param configuration Configuration store used to determine whether telemetry information should be included.
+     * @param logOptions Logging options to set in the logging policy.
+     * @param clientOptions Client options.
      * @return The default {@link UserAgentPolicy} for the module.
      */
-    private static UserAgentPolicy getUserAgentPolicy(Configuration configuration) {
+    private static UserAgentPolicy getUserAgentPolicy(Configuration configuration, HttpLogOptions logOptions,
+        ClientOptions clientOptions) {
         configuration = (configuration == null) ? Configuration.NONE : configuration;
 
-        String clientName = PROPERTIES.getOrDefault(SDK_NAME, "UnknownName");
-        String clientVersion = PROPERTIES.getOrDefault(SDK_VERSION, "UnknownVersion");
-        return new UserAgentPolicy(getDefaultHttpLogOptions().getApplicationId(), clientName, clientVersion,
-            configuration);
+        String applicationId = clientOptions.getApplicationId() != null ? clientOptions.getApplicationId()
+            : logOptions.getApplicationId();
+        return new UserAgentPolicy(applicationId, CLIENT_NAME, CLIENT_VERSION, configuration);
     }
 
     /*
@@ -234,6 +271,7 @@ public final class BuilderHelper {
                 "Using a(n) " + objectName + " requires https"));
         }
     }
+
 
     public static class QueueUrlParts {
         private String scheme;

@@ -4,10 +4,9 @@ package com.azure.cosmos.rx;
 
 import com.azure.cosmos.CosmosAsyncClient;
 import com.azure.cosmos.CosmosClientBuilder;
-import com.azure.cosmos.CosmosPagedFlux;
+import com.azure.cosmos.util.CosmosPagedFlux;
 import com.azure.cosmos.models.CosmosDatabaseProperties;
 import com.azure.cosmos.models.CosmosDatabaseRequestOptions;
-import com.azure.cosmos.models.FeedOptions;
 import com.azure.cosmos.implementation.FeedResponseListValidator;
 import com.azure.cosmos.implementation.FeedResponseValidator;
 import org.testng.annotations.AfterClass;
@@ -35,11 +34,9 @@ public class ReadFeedDatabasesTest extends TestSuiteBase {
 
     @Test(groups = { "simple" }, timeOut = FEED_TIMEOUT)
     public void readDatabases() throws Exception {
-
-        FeedOptions options = new FeedOptions();
         int maxItemCount = 2;
 
-        CosmosPagedFlux<CosmosDatabaseProperties> feedObservable = client.readAllDatabases(options);
+        CosmosPagedFlux<CosmosDatabaseProperties> feedObservable = client.readAllDatabases();
 
         int expectedPageSize = (allDatabases.size() + maxItemCount - 1) / maxItemCount;
         FeedResponseListValidator<CosmosDatabaseProperties> validator = new FeedResponseListValidator.Builder<CosmosDatabaseProperties>()
@@ -55,8 +52,8 @@ public class ReadFeedDatabasesTest extends TestSuiteBase {
 
     @BeforeClass(groups = { "simple" }, timeOut = SETUP_TIMEOUT)
     public void before_ReadFeedDatabasesTest() throws URISyntaxException {
-        client = clientBuilder().buildAsyncClient();
-        allDatabases = client.readAllDatabases(null)
+        client = getClientBuilder().buildAsyncClient();
+        allDatabases = client.readAllDatabases()
                              .collectList()
                              .block();
         for(int i = 0; i < 5; i++) {

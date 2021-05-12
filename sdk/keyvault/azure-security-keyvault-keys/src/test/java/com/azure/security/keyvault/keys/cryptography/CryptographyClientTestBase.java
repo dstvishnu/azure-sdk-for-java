@@ -8,20 +8,31 @@ import com.azure.core.exception.HttpResponseException;
 import com.azure.core.http.HttpClient;
 import com.azure.core.http.HttpPipeline;
 import com.azure.core.http.HttpPipelineBuilder;
-import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.core.http.policy.BearerTokenAuthenticationPolicy;
+import com.azure.core.http.policy.ExponentialBackoff;
 import com.azure.core.http.policy.HttpLogDetailLevel;
 import com.azure.core.http.policy.HttpLogOptions;
 import com.azure.core.http.policy.HttpLoggingPolicy;
 import com.azure.core.http.policy.HttpPipelinePolicy;
 import com.azure.core.http.policy.HttpPolicyProviders;
 import com.azure.core.http.policy.RetryPolicy;
+import com.azure.core.http.policy.RetryStrategy;
 import com.azure.core.http.policy.UserAgentPolicy;
 import com.azure.core.test.TestBase;
+import com.azure.core.test.TestMode;
 import com.azure.core.util.Configuration;
+import com.azure.core.util.Context;
+import com.azure.core.util.ServiceVersion;
 import com.azure.identity.ClientSecretCredentialBuilder;
+import com.azure.security.keyvault.keys.cryptography.models.DecryptResult;
+import com.azure.security.keyvault.keys.cryptography.models.EncryptResult;
+import com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm;
+import com.azure.security.keyvault.keys.models.JsonWebKey;
+import com.azure.security.keyvault.keys.models.KeyOperation;
 import org.junit.jupiter.api.Test;
 
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
 import java.math.BigInteger;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.KeyFactory;
@@ -30,13 +41,18 @@ import java.security.NoSuchAlgorithmException;
 import java.security.spec.KeySpec;
 import java.security.spec.RSAPrivateCrtKeySpec;
 import java.security.spec.RSAPublicKeySpec;
-import java.util.*;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
-
 
 public abstract class CryptographyClientTestBase extends TestBase {
     private static final String SDK_NAME = "client_name";
@@ -50,9 +66,8 @@ public abstract class CryptographyClientTestBase extends TestBase {
     void beforeTestSetup() {
     }
 
-    <T> T clientSetup(Function<HttpPipeline, T> clientBuilder) {
+    HttpPipeline getHttpPipeline(HttpClient httpClient, ServiceVersion serviceVersion) {
         TokenCredential credential = null;
-        HttpClient httpClient;
 
         if (!interceptorManager.isPlaybackMode()) {
             String clientId = System.getenv("ARM_CLIENTID");
@@ -70,36 +85,39 @@ public abstract class CryptographyClientTestBase extends TestBase {
 
         // Closest to API goes first, closest to wire goes last.
         final List<HttpPipelinePolicy> policies = new ArrayList<>();
-        policies.add(new UserAgentPolicy(SDK_NAME, SDK_VERSION, Configuration.getGlobalConfiguration().clone(), CryptographyServiceVersion.getLatest()));
+        policies.add(new UserAgentPolicy(SDK_NAME, SDK_VERSION, Configuration.getGlobalConfiguration().clone(), serviceVersion));
         HttpPolicyProviders.addBeforeRetryPolicies(policies);
-        policies.add(new RetryPolicy());
+        RetryStrategy strategy = new ExponentialBackoff(5, Duration.ofSeconds(2), Duration.ofSeconds(16));
+        policies.add(new RetryPolicy(strategy));
         if (credential != null) {
             policies.add(new BearerTokenAuthenticationPolicy(credential, CryptographyAsyncClient.KEY_VAULT_SCOPE));
         }
         HttpPolicyProviders.addAfterRetryPolicies(policies);
         policies.add(new HttpLoggingPolicy(new HttpLogOptions().setLogLevel(HttpLogDetailLevel.BODY_AND_HEADERS)));
 
-        if (interceptorManager.isPlaybackMode()) {
-            httpClient = interceptorManager.getPlaybackClient();
-            policies.add(interceptorManager.getRecordPolicy());
-        } else {
-            httpClient = new NettyAsyncHttpClientBuilder().wiretap(true).build();
+        if (getTestMode() == TestMode.RECORD) {
             policies.add(interceptorManager.getRecordPolicy());
         }
 
         HttpPipeline pipeline = new HttpPipelineBuilder()
             .policies(policies.toArray(new HttpPipelinePolicy[0]))
-            .httpClient(httpClient)
+            .httpClient(httpClient == null ? interceptorManager.getPlaybackClient() : httpClient)
             .build();
 
-        T client;
-        client = clientBuilder.apply(pipeline);
+        return pipeline;
+    }
 
-        return Objects.requireNonNull(client);
+    static CryptographyClient initializeCryptographyClient(JsonWebKey key) {
+        return new CryptographyClientBuilder()
+            .jsonWebKey(key)
+            .buildClient();
     }
 
     @Test
-    public abstract void encryptDecryptRsa() throws Exception;
+    public abstract void encryptDecryptRsa(HttpClient httpClient, CryptographyServiceVersion serviceVersion) throws Exception;
+
+    @Test
+    public abstract void encryptDecryptRsaLocal() throws Exception;
 
     void encryptDecryptRsaRunner(Consumer<KeyPair> testRunner) throws Exception {
         final Map<String, String> tags = new HashMap<>();
@@ -108,13 +126,37 @@ public abstract class CryptographyClientTestBase extends TestBase {
     }
 
     @Test
-    public abstract void signVerifyEc() throws NoSuchAlgorithmException, InvalidAlgorithmParameterException;
+    public abstract void encryptDecryptAes128CbcLocal() throws Exception;
 
     @Test
-    public abstract void wrapUnwraptRsa() throws Exception;
+    public abstract void encryptDecryptAes192CbcLocal() throws Exception;
 
     @Test
-    public abstract void signVerifyRsa() throws Exception;
+    public abstract void encryptDecryptAes256CbcLocal() throws Exception;
+
+    @Test
+    public abstract void encryptDecryptAes128CbcPadLocal() throws Exception;
+
+    @Test
+    public abstract void encryptDecryptAes192CbcPadLocal() throws Exception;
+
+    @Test
+    public abstract void encryptDecryptAes256CbcPadLocal() throws Exception;
+
+    @Test
+    public abstract void signVerifyEc(HttpClient httpClient, CryptographyServiceVersion serviceVersion) throws NoSuchAlgorithmException, InvalidAlgorithmParameterException;
+
+    @Test
+    public abstract void signVerifyEcLocal() throws NoSuchAlgorithmException, InvalidAlgorithmParameterException;
+
+    @Test
+    public abstract void wrapUnwrapRsa(HttpClient httpClient, CryptographyServiceVersion serviceVersion) throws Exception;
+
+    @Test
+    public abstract void wrapUnwrapRsaLocal() throws Exception;
+
+    @Test
+    public abstract void signVerifyRsa(HttpClient httpClient, CryptographyServiceVersion serviceVersion) throws Exception;
 
     private static KeyPair getWellKnownKey() throws Exception {
         BigInteger modulus = new BigInteger("27266783713040163753473734334021230592631652450892850648620119914958066181400432364213298181846462385257448168605902438305568194683691563208578540343969522651422088760509452879461613852042845039552547834002168737350264189810815735922734447830725099163869215360401162450008673869707774119785881115044406101346450911054819448375712432746968301739007624952483347278954755460152795801894283389540036131881712321193750961817346255102052653789197325341350920441746054233522546543768770643593655942246891652634114922277138937273034902434321431672058220631825053788262810480543541597284376261438324665363067125951152574540779");
@@ -133,6 +175,35 @@ public abstract class CryptographyClientTestBase extends TestBase {
         return new KeyPair(keyFactory.generatePublic(publicKeySpec), keyFactory.generatePrivate(privateKeySpec));
     }
 
+    static void encryptDecryptAesCbc(int keySize, EncryptionAlgorithm algorithm) throws NoSuchAlgorithmException {
+        byte[] plaintext = "My16BitPlaintext".getBytes();
+        byte[] iv = "My16BytesTestIv.".getBytes();
+        CryptographyClient cryptographyClient = initializeCryptographyClient(getTestJsonWebKey(keySize));
+        EncryptParameters encryptParameters = new EncryptParameters(algorithm, plaintext, iv, null);
+        EncryptResult encryptResult =
+            cryptographyClient.encrypt(encryptParameters, Context.NONE);
+        DecryptParameters decryptParameters =
+            new DecryptParameters(algorithm, encryptResult.getCipherText(), iv, null, null);
+        DecryptResult decryptResult =
+            cryptographyClient.decrypt(decryptParameters, Context.NONE);
+
+        assertArrayEquals(plaintext, decryptResult.getPlainText());
+    }
+
+    private static JsonWebKey getTestJsonWebKey(int keySize) throws NoSuchAlgorithmException {
+        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+
+        keyGen.init(keySize);
+
+        SecretKey secretKey = keyGen.generateKey();
+
+        List<KeyOperation> keyOperations = new ArrayList<>();
+        keyOperations.add(KeyOperation.ENCRYPT);
+        keyOperations.add(KeyOperation.DECRYPT);
+
+        return JsonWebKey.fromAes(secretKey, keyOperations).setId("testKey");
+    }
+
     String generateResourceId(String suffix) {
         if (interceptorManager.isPlaybackMode()) {
             return suffix;
@@ -143,8 +214,8 @@ public abstract class CryptographyClientTestBase extends TestBase {
 
     public String getEndpoint() {
         final String endpoint = interceptorManager.isPlaybackMode()
-                ? "http://localhost:8080"
-                : System.getenv("AZURE_KEYVAULT_ENDPOINT");
+            ? "http://localhost:8080"
+            : System.getenv("AZURE_KEYVAULT_ENDPOINT");
         Objects.requireNonNull(endpoint);
         return endpoint;
     }

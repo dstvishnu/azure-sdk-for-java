@@ -3,48 +3,55 @@
 
 package com.azure.ai.textanalytics.models;
 
-import com.azure.core.annotation.Immutable;
+import com.azure.ai.textanalytics.implementation.LinkedEntityMatchPropertiesHelper;
 
 /**
  * The {@link LinkedEntityMatch} model.
  */
-@Immutable
 public final class LinkedEntityMatch {
-    /*
-     * If a well-known item is recognized, a decimal number denoting the
-     * confidence level between 0 and 1 will be returned.
-     */
-    private final double confidenceScore;
-
-    /*
-     * Entity text as appears in the request.
-     */
     private final String text;
-
-    /*
-     * Grapheme start position for the entity match text.
-     */
-    private final int graphemeOffset;
-
-    /*
-     * Grapheme length for the entity match text.
-     */
-    private final int graphemeLength;
+    private final double confidenceScore;
+    private final int offset;
+    private int length;
 
     /**
      * Creates a {@link LinkedEntityMatch} model that describes linked entity match.
      *
-     * @param text The entity text as appears in the request.
+     * @param text The linked entity match text as appears in the request.
      * @param confidenceScore If a well-known item is recognized, a decimal number denoting the
      * confidence level between 0 and 1 will be returned.
-     * @param graphemeOffset Grapheme start position for the entity match text.
-     * @param graphemeLength Grapheme length for the entity match text.
      */
-    public LinkedEntityMatch(String text, double confidenceScore, int graphemeOffset, int graphemeLength) {
+    public LinkedEntityMatch(String text, double confidenceScore) {
         this.text = text;
         this.confidenceScore = confidenceScore;
-        this.graphemeOffset = graphemeOffset;
-        this.graphemeLength = graphemeLength;
+        this.offset = 0;
+    }
+
+    /**
+     * Creates a {@link LinkedEntityMatch} model that describes linked entity match.
+     *
+     * @param text The linked entity match text as appears in the request.
+     * @param confidenceScore If a well-known item is recognized, a decimal number denoting the
+     * confidence level between 0 and 1 will be returned.
+     * @param offset The start position for the linked entity match text in a document.
+     */
+    public LinkedEntityMatch(String text, double confidenceScore, int offset) {
+        this.text = text;
+        this.offset = offset;
+        this.confidenceScore = confidenceScore;
+    }
+
+    static {
+        LinkedEntityMatchPropertiesHelper.setAccessor((entity, length) -> entity.setLength(length));
+    }
+
+    /**
+     * Get the linked entity match text property: linked entity text as appears in the request.
+     *
+     * @return The text value.
+     */
+    public String getText() {
+        return this.text;
     }
 
     /**
@@ -58,29 +65,24 @@ public final class LinkedEntityMatch {
     }
 
     /**
-     * Get the text property: Entity text as appears in the request.
+     * Get the offset of linked entity match text. The start position for the linked entity match text in a document.
      *
-     * @return The text value.
+     * @return The offset of linked entity match text.
      */
-    public String getText() {
-        return this.text;
+    public int getOffset() {
+        return offset;
     }
 
     /**
-     * Get the offset property: Grapheme start position for the entity match text.
+     * Get the length of entity text.
      *
-     * @return The offset value.
+     * @return The length of entity text.
      */
-    public int getGraphemeOffset() {
-        return this.graphemeOffset;
+    public int getLength() {
+        return length;
     }
 
-    /**
-     * Get the length property: Grapheme Length for the entity match text.
-     *
-     * @return The length value.
-     */
-    public int getGraphemeLength() {
-        return this.graphemeLength;
+    private void setLength(int length) {
+        this.length = length;
     }
 }

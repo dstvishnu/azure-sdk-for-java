@@ -8,10 +8,10 @@ import com.azure.core.annotation.Get;
 import com.azure.core.annotation.Host;
 import com.azure.core.annotation.Put;
 import com.azure.core.annotation.ServiceInterface;
-import com.azure.core.implementation.entities.AccessPolicy;
-import com.azure.core.implementation.entities.SignedIdentifierInner;
-import com.azure.core.implementation.entities.SignedIdentifiersWrapper;
-import com.azure.core.implementation.entities.Slideshow;
+import com.azure.core.util.serializer.AccessPolicy;
+import com.azure.core.util.serializer.SignedIdentifierInner;
+import com.azure.core.util.serializer.SignedIdentifiersWrapper;
+import com.azure.core.util.serializer.Slideshow;
 import com.azure.core.http.HttpClient;
 import com.azure.core.http.HttpHeaders;
 import com.azure.core.http.HttpMethod;
@@ -45,7 +45,7 @@ public class RestProxyXMLTests {
         private HttpResponse response(HttpRequest request, String resource) throws IOException, URISyntaxException {
             URL url = getClass().getClassLoader().getResource(resource);
             byte[] bytes = Files.readAllBytes(Paths.get(url.toURI()));
-            HttpHeaders headers = new HttpHeaders().put("Content-Type", "application/xml");
+            HttpHeaders headers = new HttpHeaders().set("Content-Type", "application/xml");
             HttpResponse res = new MockHttpResponse(request, 200, headers, bytes);
             return res;
         }

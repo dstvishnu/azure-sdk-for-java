@@ -3,39 +3,35 @@
 > see https://aka.ms/autorest
 
 ### Setup
-```ps
-cd C:\work
-git clone --recursive https://github.com/Azure/autorest.java/
-cd autorest.java
-git checkout v3
-npm install
-cd ..
-git clone --recursive https://github.com/jianghaolu/autorest.modeler/
-cd autorest.modeler
-git checkout headerprefixfix
-npm install
-```
+
+> see https://github.com/Azure/autorest.java
 
 ### Generation
+> see https://github.com/Azure/autorest.java/releases for the latest version of autorest
 ```ps
 cd <swagger-folder>
-autorest --use=C:/work/autorest.java --use=C:/work/autorest.modeler --version=2.0.4280
+mvn install
+autorest --java --use:@autorest/java@4.0.x
 ```
 
 ### Code generation settings
 ``` yaml
-input-file: https://raw.githubusercontent.com/Azure/azure-rest-api-specs/storage-dataplane-preview/specification/storage/data-plane/Microsoft.FileStorage/preview/2019-07-07/file.json
+input-file: https://raw.githubusercontent.com/Azure/azure-rest-api-specs/storage-dataplane-preview/specification/storage/data-plane/Microsoft.FileStorage/preview/2020-04-08/file.json
 java: true
 output-folder: ../
 namespace: com.azure.storage.file.share
 enable-xml: true
+generate-client-as-impl: true
 generate-client-interfaces: false
+service-interface-as-public: true
 sync-methods: none
 license-header: MICROSOFT_MIT_SMALL
-add-context-parameter: true
+context-client-method-parameter: true
 models-subpackage: implementation.models
 custom-types-subpackage: models
-custom-types: HandleItem,ShareFileHttpHeaders,ShareItem,ShareServiceProperties,ShareCorsRule,ShareProperties,Range,CopyStatusType,ShareSignedIdentifier,SourceModifiedAccessConditions,ShareErrorCode,StorageServiceProperties,ShareMetrics,ShareAccessPolicy,ShareFileDownloadHeaders,LeaseDurationType,LeaseStateType,LeaseStatusType,PermissionCopyModeType
+custom-types: HandleItem,ShareFileHttpHeaders,ShareServiceProperties,ShareCorsRule,Range,FileRange,ClearRange,ShareFileRangeList,CopyStatusType,ShareSignedIdentifier,SourceModifiedAccessConditions,ShareErrorCode,StorageServiceProperties,ShareMetrics,ShareAccessPolicy,ShareFileDownloadHeaders,LeaseDurationType,LeaseStateType,LeaseStatusType,PermissionCopyModeType,ShareAccessTier,ShareRootSquash,ShareRetentionPolicy,ShareProtocolSettings,ShareSmbSettings,SmbMultichannel
+customization-jar-path: target/azure-storage-file-share-customization-1.0.0-beta.1.jar
+customization-class: com.azure.storage.file.share.customization.ShareStorageCustomization
 ```
 
 ### Query Parameters
@@ -178,6 +174,19 @@ directive:
     }
 ```
 
+### /{shareName}?restype=share&comp=undelete
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{shareName}?restype=share&comp=undelete"]
+  transform: >
+    let param = $.put.parameters[0];
+    if (!param["$ref"].endsWith("ShareName")) {
+        const path = param["$ref"].replace(/[#].*$/, "#/parameters/ShareName");
+        $.put.parameters.splice(0, 0, { "$ref": path });
+    }
+```
+
 ### /{shareName}/{directoryPath}?restype=directory
 ``` yaml
 directive:
@@ -302,7 +311,6 @@ directive:
         op.get.responses["206"].headers["x-ms-content-md5"]["x-ms-client-name"] = "FileContentMd5";
         op.head.parameters.splice(0, 0, { "$ref": path + "ShareName" });
         op.head.parameters.splice(1, 0, { "$ref": path + "FilePath" });
-        delete op.head.responses.default.schema;
         op.delete.parameters.splice(0, 0, { "$ref": path + "ShareName" });
         op.delete.parameters.splice(1, 0, { "$ref": path + "FilePath" });
         delete $["/{shareName}/{directory}/{fileName}"];
@@ -475,6 +483,19 @@ directive:
     }
 ```
 
+### /{shareName}?restype=share&comp=lease&acquire
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{shareName}?restype=share&comp=lease&acquire"]
+  transform: >
+    let param = $.put.parameters[0];
+    if (!param["$ref"].endsWith("ShareName")) {
+        const path = param["$ref"].replace(/[#].*$/, "#/parameters/ShareName");
+        $.put.parameters.splice(0, 0, { "$ref": path });
+    }
+```
+
 ### /{shareName}/{filePath}?comp=lease&release
 ``` yaml
 directive:
@@ -487,6 +508,19 @@ directive:
         op.put.parameters.splice(0, 0, { "$ref": path + "ShareName" });
         op.put.parameters.splice(1, 0, { "$ref": path + "FilePath" });
         delete $["/{shareName}/{directory}/{fileName}?comp=lease&release"];
+    }
+```
+
+### /{shareName}?restype=share&comp=lease&release
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{shareName}?restype=share&comp=lease&release"]
+  transform: >
+    let param = $.put.parameters[0];
+    if (!param["$ref"].endsWith("ShareName")) {
+        const path = param["$ref"].replace(/[#].*$/, "#/parameters/ShareName");
+        $.put.parameters.splice(0, 0, { "$ref": path });
     }
 ```
 
@@ -505,6 +539,19 @@ directive:
     }
 ```
 
+### /{shareName}?restype=share&comp=lease&change
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{shareName}?restype=share&comp=lease&change"]
+  transform: >
+    let param = $.put.parameters[0];
+    if (!param["$ref"].endsWith("ShareName")) {
+        const path = param["$ref"].replace(/[#].*$/, "#/parameters/ShareName");
+        $.put.parameters.splice(0, 0, { "$ref": path });
+    }
+```
+
 ### /{shareName}/{filePath}?comp=lease&break
 ``` yaml
 directive:
@@ -520,17 +567,43 @@ directive:
     }
 ```
 
-### ShareProperties
+### /{shareName}?restype=share&comp=lease&break
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{shareName}?restype=share&comp=lease&break"]
+  transform: >
+    let param = $.put.parameters[0];
+    if (!param["$ref"].endsWith("ShareName")) {
+        const path = param["$ref"].replace(/[#].*$/, "#/parameters/ShareName");
+        $.put.parameters.splice(0, 0, { "$ref": path });
+    }
+```
+
+### /{shareName}?restype=share&comp=lease&renew
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{shareName}?restype=share&comp=lease&renew"]
+  transform: >
+    let param = $.put.parameters[0];
+    if (!param["$ref"].endsWith("ShareName")) {
+        const path = param["$ref"].replace(/[#].*$/, "#/parameters/ShareName");
+        $.put.parameters.splice(0, 0, { "$ref": path });
+    }
+```
+
+### SharePropertiesInternal
 ``` yaml
 directive:
 - from: swagger-document
   where: $.definitions
   transform: >
-    if (!$.ShareProperties.properties.Metadata) {
-        const path = $.ShareItem.properties.Metadata.$ref;
-        $.ShareProperties.properties.Metadata = { "$ref": path };
+    if (!$.SharePropertiesInternal.properties.Metadata) {
+        const path = $.ShareItemInternal.properties.Metadata.$ref;
+        $.SharePropertiesInternal.properties.Metadata = { "$ref": path };
     }
-    $.ShareProperties.properties.Etag["x-ms-client-name"] = "eTag";
+    $.SharePropertiesInternal.properties.Etag["x-ms-client-name"] = "eTag";
 ```
 
 ### ShareUsageBytes
@@ -574,21 +647,6 @@ directive:
     delete $.default;
     delete $["x-ms-enum"];
     $["x-ms-parameter-location"] = "method";
-```
-
-### Add the CustomFileAndDirectoryListingDeserializer attribute
-``` yaml
-directive:
-- from: FilesAndDirectoriesListSegment.java
-  where: $
-  transform: >
-    return $.
-      replace(
-        "import com.fasterxml.jackson.annotation.JsonProperty;",
-        "import com.fasterxml.jackson.annotation.JsonProperty;\nimport com.fasterxml.jackson.databind.annotation.JsonDeserialize;").
-      replace(
-        "public final class FilesAndDirectoriesListSegment {",
-        "@JsonDeserialize(using = CustomFileAndDirectoryListingDeserializer.class)\npublic final class FilesAndDirectoriesListSegment {");
 ```
 
 ### ShareErrorCode
@@ -720,58 +778,7 @@ directive:
     $.FileContentType["x-ms-client-name"] = "contentType";
 ```
 
-### Change StorageErrorException to StorageException
-``` yaml
-directive:
-- from: ServicesImpl.java
-  where: $
-  transform: >
-    return $.
-      replace(
-        "com.azure.storage.file.share.implementation.models.StorageErrorException",
-        "com.azure.storage.file.share.models.ShareStorageException"
-      ).
-      replace(
-        /\@UnexpectedResponseExceptionType\(StorageErrorException\.class\)/g,
-        "@UnexpectedResponseExceptionType(ShareStorageException.class)"
-      );
-- from: SharesImpl.java
-  where: $
-  transform: >
-    return $.
-      replace(
-        "com.azure.storage.file.share.implementation.models.StorageErrorException",
-        "com.azure.storage.file.share.models.ShareStorageException"
-      ).
-      replace(
-        /\@UnexpectedResponseExceptionType\(StorageErrorException\.class\)/g,
-        "@UnexpectedResponseExceptionType(ShareStorageException.class)"
-      );
-- from: DirectorysImpl.java
-  where: $
-  transform: >
-    return $.
-      replace(
-        "com.azure.storage.file.share.implementation.models.StorageErrorException",
-        "com.azure.storage.file.share.models.ShareStorageException"
-      ).
-      replace(
-        /\@UnexpectedResponseExceptionType\(StorageErrorException\.class\)/g,
-        "@UnexpectedResponseExceptionType(ShareStorageException.class)"
-      );
-- from: FilesImpl.java
-  where: $
-  transform: >
-    return $.
-      replace(
-        "com.azure.storage.file.share.implementation.models.StorageErrorException",
-        "com.azure.storage.file.share.models.ShareStorageException"
-      ).
-      replace(
-        /\@UnexpectedResponseExceptionType\(StorageErrorException\.class\)/g,
-        "@UnexpectedResponseExceptionType(ShareStorageException.class)"
-      );
-```
+
 ## Rename FileDownloadHeaders to ShareFileDownloadHeaders
 ``` yaml
 directive: 
@@ -787,6 +794,24 @@ directive:
   where: $.parameters.LeaseIdOptional
   transform: >
     delete $["x-ms-parameter-grouping"];
+```
+
+### ListSharesSegment x-ms-pageable itemName
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/?comp=list"].get
+  transform: >
+    $["x-ms-pageable"].itemName = "ShareItems";
+```
+
+### Delete Directory_ListFilesAndDirectoriesSegment x-ms-pageable as autorest does not currently support multiple return types for pageable
+``` yaml
+directive:
+- from: swagger-document
+  where: $["x-ms-paths"]["/{shareName}/{directoryPath}?restype=directory&comp=list"].get
+  transform: >
+    delete $["x-ms-pageable"];
 ```
 
 ![Impressions](https://azure-sdk-impressions.azurewebsites.net/api/impressions/azure-sdk-for-java%2Fsdk%2Fstorage%2Fazure-storage-file-share%2Fswagger%2FREADME.png)

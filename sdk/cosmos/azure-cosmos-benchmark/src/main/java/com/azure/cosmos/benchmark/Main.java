@@ -3,10 +3,17 @@
 
 package com.azure.cosmos.benchmark;
 
+import com.azure.cosmos.benchmark.ctl.AsyncCtlWorkload;
+import com.azure.cosmos.benchmark.linkedin.LICtlWorkload;
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.ParameterException;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static com.azure.cosmos.benchmark.Configuration.Operation.CtlWorkload;
+import static com.azure.cosmos.benchmark.Configuration.Operation.LinkedInCtlWorkload;
+import static com.azure.cosmos.benchmark.Configuration.Operation.ReadThroughputWithMultipleClients;
 
 public class Main {
 
@@ -25,10 +32,21 @@ public class Main {
                 return;
             }
 
+            validateConfiguration(cfg);
+
             if (cfg.isSync()) {
                 syncBenchmark(cfg);
             } else {
-                asyncBenchmark(cfg);
+                if(cfg.getOperationType().equals(ReadThroughputWithMultipleClients)) {
+                    asyncMultiClientBenchmark(cfg);
+                } else if(cfg.getOperationType().equals(CtlWorkload)) {
+                    asyncCtlWorkload(cfg);
+                } else if (cfg.getOperationType().equals(LinkedInCtlWorkload)) {
+                    linkedInCtlWorkload(cfg);
+                }
+                else {
+                    asyncBenchmark(cfg);
+                }
             }
         } catch (ParameterException e) {
             // if any error in parsing the cmd-line options print out the usage help
@@ -38,14 +56,42 @@ public class Main {
         }
     }
 
+    private static void validateConfiguration(Configuration cfg) {
+        switch (cfg.getOperationType()) {
+            case WriteLatency:
+            case WriteThroughput:
+                break;
+            default:
+                if (!Boolean.parseBoolean(cfg.isContentResponseOnWriteEnabled())) {
+                    throw new IllegalArgumentException("contentResponseOnWriteEnabled parameter can only be set to false " +
+                        "for write latency and write throughput operations");
+                }
+        }
+
+        switch (cfg.getOperationType()) {
+            case ReadLatency:
+            case ReadThroughput:
+                break;
+            default:
+                if (cfg.getSparsityWaitTime() != null) {
+                    throw new IllegalArgumentException("sparsityWaitTime is not supported for " + cfg.getOperationType());
+                }
+        }
+    }
+
     private static void syncBenchmark(Configuration cfg) throws Exception {
         LOGGER.info("Sync benchmark ...");
-        SyncBenchmark benchmark = null;
+        SyncBenchmark<?> benchmark = null;
         try {
             switch (cfg.getOperationType()) {
                 case ReadThroughput:
                 case ReadLatency:
                     benchmark = new SyncReadBenchmark(cfg);
+                    break;
+
+                case WriteLatency:
+                case WriteThroughput:
+                    benchmark = new SyncWriteBenchmark(cfg);
                     break;
 
                 default:
@@ -63,7 +109,7 @@ public class Main {
 
     private static void asyncBenchmark(Configuration cfg) throws Exception {
         LOGGER.info("Async benchmark ...");
-        AsyncBenchmark benchmark = null;
+        AsyncBenchmark<?> benchmark = null;
         try {
             switch (cfg.getOperationType()) {
                 case WriteThroughput:
@@ -84,6 +130,7 @@ public class Main {
                 case QueryTopOrderby:
                 case QueryAggregateTopOrderby:
                 case QueryInClauseParallel:
+                case ReadAllItemsOfLogicalPartition:
                     benchmark = new AsyncQueryBenchmark(cfg);
                     break;
 
@@ -110,5 +157,55 @@ public class Main {
                 benchmark.shutdown();
             }
         }
+    }
+
+    private static void asyncMultiClientBenchmark(Configuration cfg) throws Exception {
+        LOGGER.info("Async multi client benchmark ...");
+        AsynReadWithMultipleClients<?> benchmark = null;
+        try {
+            benchmark = new AsynReadWithMultipleClients<>(cfg);
+            LOGGER.info("Starting {}", cfg.getOperationType());
+            benchmark.run();
+        } finally {
+            if (benchmark != null) {
+                benchmark.shutdown();
+            }
+        }
+    }
+
+    private static void asyncCtlWorkload(Configuration cfg) throws Exception {
+        LOGGER.info("Async ctl workload");
+        AsyncCtlWorkload benchmark = null;
+        try {
+            benchmark = new AsyncCtlWorkload(cfg);
+            LOGGER.info("Starting {}", cfg.getOperationType());
+            benchmark.run();
+        } finally {
+            if (benchmark != null) {
+                benchmark.shutdown();
+            }
+        }
+    }
+
+    private static void linkedInCtlWorkload(Configuration cfg) {
+        LOGGER.info("Executing the LinkedIn ctl workload");
+        LICtlWorkload workload = null;
+        try {
+            workload = new LICtlWorkload(cfg);
+
+            LOGGER.info("Setting up the LinkedIn ctl workload");
+            workload.setup();
+
+            LOGGER.info("Starting the LinkedIn ctl workload");
+            workload.run();
+        } catch (Exception e) {
+            LOGGER.error("Exception received while executing the LinkedIn ctl workload", e);
+            throw e;
+        }
+        finally {
+            Optional.ofNullable(workload)
+                .ifPresent(LICtlWorkload::shutdown);
+        }
+        LOGGER.info("Completed LinkedIn ctl workload execution");
     }
 }

@@ -6,12 +6,13 @@ package com.azure.storage.blob.batch;
 import com.azure.core.http.HttpHeaders;
 import com.azure.core.http.HttpRequest;
 import com.azure.core.http.HttpResponse;
+import com.azure.core.http.rest.Response;
 import com.azure.core.http.rest.SimpleResponse;
-import com.azure.core.util.FluxUtil;
 import com.azure.core.util.CoreUtils;
+import com.azure.core.util.FluxUtil;
 import com.azure.core.util.logging.ClientLogger;
-import com.azure.storage.blob.implementation.models.ServicesSubmitBatchResponse;
 import com.azure.storage.blob.models.BlobStorageException;
+import com.azure.storage.common.implementation.Constants;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -52,12 +53,12 @@ class BlobBatchHelper {
 
     // This method connects the batch response values to the individual batch operations based on their Content-Id
     static Mono<SimpleResponse<Void>> mapBatchResponse(BlobBatchOperationInfo batchOperationInfo,
-        ServicesSubmitBatchResponse batchResponse, boolean throwOnAnyFailure, ClientLogger logger) {
+        Response<Flux<ByteBuffer>> rawResponse, boolean throwOnAnyFailure, ClientLogger logger) {
         /*
          * Content-Type will contain the boundary for each batch response. The expected format is:
          * "Content-Type: multipart/mixed; boundary=batchresponse_66925647-d0cb-4109-b6d3-28efe3e1e5ed"
          */
-        String contentType = batchResponse.getDeserializedHeaders().getContentType();
+        String contentType = rawResponse.getHeaders().getValue(Constants.HeaderConstants.CONTENT_TYPE);
 
         // Split on the boundary [ "multipart/mixed; boundary", "batchresponse_66925647-d0cb-4109-b6d3-28efe3e1e5ed"]
         String[] boundaryPieces = contentType.split("=", 2);
@@ -68,7 +69,7 @@ class BlobBatchHelper {
 
         String boundary = boundaryPieces[1];
 
-        return FluxUtil.collectBytesInByteBufferStream(batchResponse.getValue())
+        return FluxUtil.collectBytesInByteBufferStream(rawResponse.getValue())
             .flatMap(byteArrayBody -> Mono.fromRunnable(() -> {
                 String body = new String(byteArrayBody, StandardCharsets.UTF_8);
                 List<BlobStorageException> exceptions = new ArrayList<>();
@@ -79,8 +80,9 @@ class BlobBatchHelper {
                     int statusCode = getStatusCode(exceptionSections[1], logger);
                     HttpHeaders headers = getHttpHeaders(exceptionSections[1]);
 
-                    throw logger.logExceptionAsError(new BlobStorageException(headers.getValue("x-ms-error-code"),
-                        createHttpResponse(batchResponse.getRequest(), statusCode, headers, body), body));
+                    throw logger.logExceptionAsError(new BlobStorageException(
+                        headers.getValue(Constants.HeaderConstants.ERROR_CODE),
+                        createHttpResponse(rawResponse.getRequest(), statusCode, headers, body), body));
                 }
 
                 // Split the batch response body into batch operation responses.
@@ -104,16 +106,16 @@ class BlobBatchHelper {
                     // The third section will contain the body.
                     if (subResponseSections.length > 2) {
                         // The body is optional and may not exist.
-                        setBodyOrAddException(batchOperationResponse, subResponseSections[2], exceptions);
+                        setBodyOrAddException(batchOperationResponse, subResponseSections[2], exceptions, logger);
                     }
                 }
 
                 if (throwOnAnyFailure && exceptions.size() != 0) {
                     throw logger.logExceptionAsError(new BlobBatchStorageException("Batch had operation failures.",
-                        createHttpResponse(batchResponse), exceptions));
+                        createHttpResponse(rawResponse), exceptions));
                 }
 
-                new SimpleResponse<>(batchResponse, null);
+                new SimpleResponse<>(rawResponse, null);
             }));
     }
 
@@ -161,13 +163,14 @@ class BlobBatchHelper {
     }
 
     private static void setBodyOrAddException(BlobBatchOperationResponse<?> batchOperationResponse,
-        String responseBody, List<BlobStorageException> exceptions) {
+        String responseBody, List<BlobStorageException> exceptions, ClientLogger logger) {
         /*
          * Currently no batching operations will return a success body, they will only return a body on an exception.
          * For now this will only construct the exception and throw if it should throw on an error.
          */
         BlobStorageException exception = new BlobStorageException(responseBody,
             batchOperationResponse.asHttpResponse(responseBody), responseBody);
+        logger.logExceptionAsError(exception);
         batchOperationResponse.setException(exception);
         exceptions.add(exception);
     }
@@ -211,7 +214,7 @@ class BlobBatchHelper {
         };
     }
 
-    private static HttpResponse createHttpResponse(ServicesSubmitBatchResponse response) {
+    private static HttpResponse createHttpResponse(Response<Flux<ByteBuffer>> response) {
         return new HttpResponse(response.getRequest()) {
             @Override
             public int getStatusCode() {

@@ -2,8 +2,9 @@
 // Licensed under the MIT License.
 package com.azure.cosmos.implementation;
 
+import com.azure.cosmos.BridgeInternal;
 import com.azure.cosmos.implementation.caches.RxClientCollectionCache;
-import com.azure.cosmos.CosmosClientException;
+import com.azure.cosmos.CosmosException;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -23,12 +24,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  */
 public class PartitionKeyMismatchRetryPolicy extends DocumentClientRetryPolicy {
+    private final static int MaxRetries = 1;
     private RxClientCollectionCache clientCollectionCache;
     private DocumentClientRetryPolicy nextRetryPolicy;
     private AtomicInteger retriesAttempted = new AtomicInteger(0);
     private String collectionLink;
     private RequestOptions options;
-    private final static int MaxRetries = 1;
+    private RxDocumentServiceRequest request;
 
 
     public PartitionKeyMismatchRetryPolicy(
@@ -41,18 +43,18 @@ public class PartitionKeyMismatchRetryPolicy extends DocumentClientRetryPolicy {
 
         // TODO: this should be retrievable from document client exception.
         collectionLink = Utils.getCollectionName(resourceFullName);
-        this.options = options;
+        this.options = requestOptions;
     }
 
 
-    /// <summary> 
+    /// <summary>
     /// Should the caller retry the operation.
     /// </summary>
     /// <param name="exception">Exception that occured when the operation was tried</param>
     /// <param name="cancellationToken"></param>
     /// <returns>True indicates caller should retry, False otherwise</returns>
     public Mono<ShouldRetryResult> shouldRetry(Exception exception) {
-        CosmosClientException clientException = Utils.as(exception, CosmosClientException.class) ;
+        CosmosException clientException = Utils.as(exception, CosmosException.class) ;
 
         if (clientException != null &&
                 Exceptions.isStatusCode(clientException, HttpConstants.StatusCodes.BADREQUEST) &&
@@ -63,9 +65,15 @@ public class PartitionKeyMismatchRetryPolicy extends DocumentClientRetryPolicy {
             // TODO:
             //this.clientCollectionCache.refresh(clientException.ResourceAddress);
             if (this.options != null) {
-                this.clientCollectionCache.refresh(collectionLink, this.options.getProperties());
+                this.clientCollectionCache.refresh(
+                    BridgeInternal.getMetaDataDiagnosticContext(this.request.requestContext.cosmosDiagnostics),
+                    collectionLink,
+                    this.options.getProperties());
             } else {
-                this.clientCollectionCache.refresh(collectionLink, null);
+                this.clientCollectionCache.refresh(
+                    BridgeInternal.getMetaDataDiagnosticContext(this.request.requestContext.cosmosDiagnostics),
+                    collectionLink,
+                    null);
             }
 
             this.retriesAttempted.incrementAndGet();
@@ -81,7 +89,16 @@ public class PartitionKeyMismatchRetryPolicy extends DocumentClientRetryPolicy {
      */
     @Override
     public void onBeforeSendRequest(RxDocumentServiceRequest request) {
-        // TODO Auto-generated method stub
+        this.request = request;
         this.nextRetryPolicy.onBeforeSendRequest(request);
+    }
+
+    @Override
+    public RetryContext getRetryContext() {
+        if (this.nextRetryPolicy != null) {
+            return this.nextRetryPolicy.getRetryContext();
+        } else {
+            return null;
+        }
     }
 }

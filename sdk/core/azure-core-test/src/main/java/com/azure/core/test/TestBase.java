@@ -2,8 +2,13 @@
 // Licensed under the MIT License.
 package com.azure.core.test;
 
+import com.azure.core.http.HttpClient;
+import com.azure.core.http.HttpClientProvider;
+import com.azure.core.test.implementation.ImplUtils;
+import com.azure.core.test.implementation.TestIterationContext;
 import com.azure.core.test.utils.TestResourceNamer;
 import com.azure.core.util.Configuration;
+import com.azure.core.util.CoreUtils;
 import com.azure.core.util.logging.ClientLogger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -12,10 +17,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Locale;
+import java.util.ServiceLoader;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * Base class for running live and playback tests using {@link InterceptorManager}.
@@ -23,6 +33,11 @@ import java.util.Locale;
 public abstract class TestBase implements BeforeEachCallback {
     // Environment variable name used to determine the TestMode.
     private static final String AZURE_TEST_MODE = "AZURE_TEST_MODE";
+    private static final String AZURE_TEST_HTTP_CLIENTS = "AZURE_TEST_HTTP_CLIENTS";
+    public static final String AZURE_TEST_HTTP_CLIENTS_VALUE_ALL = "ALL";
+    public static final String AZURE_TEST_HTTP_CLIENTS_VALUE_NETTY = "NettyAsyncHttpClient";
+    public static final String AZURE_TEST_SERVICE_VERSIONS_VALUE_ALL = "ALL";
+
     private static TestMode testMode;
 
     private final ClientLogger logger = new ClientLogger(TestBase.class);
@@ -32,6 +47,9 @@ public abstract class TestBase implements BeforeEachCallback {
     protected TestContextManager testContextManager;
 
     private ExtensionContext extensionContext;
+
+    @RegisterExtension
+    final TestIterationContext testIterationContext = new TestIterationContext();
 
     /**
      * Before tests are executed, determines the test mode by reading the {@link TestBase#AZURE_TEST_MODE} environment
@@ -56,13 +74,14 @@ public abstract class TestBase implements BeforeEachCallback {
     @BeforeEach
     public void setupTest(TestInfo testInfo) {
         this.testContextManager = new TestContextManager(testInfo.getTestMethod().get(), testMode);
+        testContextManager.setTestIteration(testIterationContext.getTestIteration());
         logger.info("Test Mode: {}, Name: {}", testMode, testContextManager.getTestName());
 
         try {
             interceptorManager = new InterceptorManager(testContextManager);
         } catch (UncheckedIOException e) {
             logger.error("Could not create interceptor for {}", testContextManager.getTestName(), e);
-            Assertions.fail();
+            Assertions.fail(e);
         }
         testResourceNamer = new TestResourceNamer(testContextManager, interceptorManager.getRecordedData());
 
@@ -71,11 +90,12 @@ public abstract class TestBase implements BeforeEachCallback {
 
     /**
      * Disposes of {@link InterceptorManager} and its inheriting class' resources.
+     *
      * @param testInfo the injected testInfo
      */
     @AfterEach
     public void teardownTest(TestInfo testInfo) {
-        if (testContextManager.didTestRun()) {
+        if (testContextManager != null && testContextManager.didTestRun()) {
             afterTest();
             interceptorManager.close();
         }
@@ -93,11 +113,11 @@ public abstract class TestBase implements BeforeEachCallback {
     /**
      * Gets the name of the current test being run.
      *
+     * @return The name of the current test.
      * @deprecated This method is deprecated as JUnit 5 provides a simpler mechanism to get the test method name through
      * {@link TestInfo}. Keeping this for backward compatability of other client libraries that still override this
      * method. This method can be deleted when all client libraries remove this method. See {@link
      * #setupTest(TestInfo)}.
-     * @return The name of the current test.
      */
     @Deprecated
     protected String getTestName() {
@@ -121,21 +141,63 @@ public abstract class TestBase implements BeforeEachCallback {
     protected void afterTest() {
     }
 
-    private static TestMode initializeTestMode() {
-        final ClientLogger logger = new ClientLogger(TestBase.class);
-        final String azureTestMode = Configuration.getGlobalConfiguration().get(AZURE_TEST_MODE);
+    /**
+     * Returns a list of {@link HttpClient HttpClients} that should be tested.
+     *
+     * @return A list of {@link HttpClient HttpClients} to be tested.
+     */
+    public static Stream<HttpClient> getHttpClients() {
+        /*
+         * In PLAYBACK mode PlaybackClient is used, so there is no need to load HttpClient instances from the classpath.
+         * In LIVE or RECORD mode load all HttpClient instances and let the test run determine which HttpClient
+         * implementation it will use.
+         */
+        return (testMode == TestMode.PLAYBACK)
+            ? Stream.of(new HttpClient[]{null})
+            : StreamSupport.stream(ServiceLoader.load(HttpClientProvider.class).spliterator(), false)
+                .map(HttpClientProvider::createInstance)
+                .filter(TestBase::shouldClientBeTested);
+    }
 
-        if (azureTestMode != null) {
-            try {
-                return TestMode.valueOf(azureTestMode.toUpperCase(Locale.US));
-            } catch (IllegalArgumentException e) {
-                logger.error("Could not parse '{}' into TestEnum. Using 'Playback' mode.", azureTestMode);
-                return TestMode.PLAYBACK;
-            }
+    /**
+     * Returns whether the given http clients match the rules of test framework.
+     *
+     * <ul>
+     * <li>Using Netty http client as default if no environment variable is set.</li>
+     * <li>If it's set to ALL, all HttpClients in the classpath will be tested.</li>
+     * <li>Otherwise, the name of the HttpClient class should match env variable.</li>
+     * </ul>
+     *
+     * Environment values currently supported are: "ALL", "netty", "okhttp" which is case insensitive.
+     * Use comma to separate http clients want to test.
+     * e.g. {@code set AZURE_TEST_HTTP_CLIENTS = NettyAsyncHttpClient, OkHttpAsyncHttpClient}
+     *
+     * @param client Http client needs to check
+     * @return Boolean indicates whether filters out the client or not.
+     */
+    public static boolean shouldClientBeTested(HttpClient client) {
+        String configuredHttpClientToTest = Configuration.getGlobalConfiguration().get(AZURE_TEST_HTTP_CLIENTS);
+        if (CoreUtils.isNullOrEmpty(configuredHttpClientToTest)) {
+            return client.getClass().getSimpleName().equals(AZURE_TEST_HTTP_CLIENTS_VALUE_NETTY);
         }
+        if (configuredHttpClientToTest.equalsIgnoreCase(AZURE_TEST_HTTP_CLIENTS_VALUE_ALL)) {
+            return true;
+        }
+        String[] configuredHttpClientList = configuredHttpClientToTest.split(",");
+        return Arrays.stream(configuredHttpClientList).anyMatch(configuredHttpClient ->
+            client.getClass().getSimpleName().toLowerCase(Locale.ROOT)
+                .contains(configuredHttpClient.trim().toLowerCase(Locale.ROOT)));
+    }
 
-        logger.info("Environment variable '{}' has not been set yet. Using 'Playback' mode.", AZURE_TEST_MODE);
-        return TestMode.PLAYBACK;
+    /**
+     * Initializes the {@link TestMode} from the environment configuration {@code AZURE_TEST_MODE}.
+     * <p>
+     * If {@code AZURE_TEST_MODE} isn't configured or is invalid then {@link TestMode#PLAYBACK} is returned.
+     *
+     * @return The {@link TestMode} being used for testing.
+     */
+    static TestMode initializeTestMode() {
+        return ImplUtils.getTestMode();
     }
 
     /**

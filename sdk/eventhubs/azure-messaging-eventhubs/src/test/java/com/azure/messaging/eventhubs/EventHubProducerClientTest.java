@@ -16,6 +16,7 @@ import com.azure.core.amqp.implementation.ConnectionOptions;
 import com.azure.core.amqp.implementation.MessageSerializer;
 import com.azure.core.amqp.implementation.TracerProvider;
 import com.azure.core.credential.TokenCredential;
+import com.azure.core.util.ClientOptions;
 import com.azure.core.util.Context;
 import com.azure.core.util.tracing.ProcessKind;
 import com.azure.core.util.tracing.Tracer;
@@ -25,6 +26,7 @@ import com.azure.messaging.eventhubs.implementation.EventHubConnectionProcessor;
 import com.azure.messaging.eventhubs.models.CreateBatchOptions;
 import com.azure.messaging.eventhubs.models.SendOptions;
 import org.apache.qpid.proton.amqp.messaging.Section;
+import org.apache.qpid.proton.engine.SslDomain;
 import org.apache.qpid.proton.message.Message;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -60,7 +62,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -69,6 +71,8 @@ import static org.mockito.Mockito.when;
 public class EventHubProducerClientTest {
     private static final String HOSTNAME = "my-host-name";
     private static final String EVENT_HUB_NAME = "my-event-hub-name";
+    private final AmqpRetryOptions retryOptions = new AmqpRetryOptions().setTryTimeout(Duration.ofSeconds(30));
+    private final MessageSerializer messageSerializer = new EventHubMessageSerializer();
 
     @Mock
     private AmqpSendLink sendLink;
@@ -84,8 +88,6 @@ public class EventHubProducerClientTest {
     private ArgumentCaptor<List<Message>> messagesCaptor;
 
     private EventHubProducerAsyncClient asyncProducer;
-    private AmqpRetryOptions retryOptions = new AmqpRetryOptions().setTryTimeout(Duration.ofSeconds(30));
-    private MessageSerializer messageSerializer = new EventHubMessageSerializer();
     private EventHubConnectionProcessor connectionProcessor;
 
     @BeforeEach
@@ -100,7 +102,8 @@ public class EventHubProducerClientTest {
 
         ConnectionOptions connectionOptions = new ConnectionOptions(HOSTNAME, tokenCredential,
             CbsAuthorizationType.SHARED_ACCESS_SIGNATURE, AmqpTransportType.AMQP_WEB_SOCKETS, retryOptions,
-            ProxyOptions.SYSTEM_DEFAULTS, Schedulers.parallel());
+            ProxyOptions.SYSTEM_DEFAULTS, Schedulers.parallel(), new ClientOptions(),
+            SslDomain.VerifyMode.ANONYMOUS_PEER, "test-product", "test-client-version");
         connectionProcessor = Flux.<EventHubAmqpConnection>create(sink -> sink.next(connection))
             .subscribeWith(new EventHubConnectionProcessor(connectionOptions.getFullyQualifiedNamespace(),
                 "event-hub-path", connectionOptions.getRetry()));
@@ -201,7 +204,7 @@ public class EventHubProducerClientTest {
             .start(eq("EventHubs.message"), any(), eq(ProcessKind.MESSAGE));
         verify(tracer1, times(2)).end(eq("success"), isNull(), any());
 
-        verifyZeroInteractions(onClientClosed);
+        verifyNoInteractions(onClientClosed);
     }
 
     /**
@@ -252,7 +255,33 @@ public class EventHubProducerClientTest {
         verify(tracer1, times(1)).addLink(any());
         verify(tracer1, times(1)).end(eq("success"), isNull(), any());
 
-        verifyZeroInteractions(onClientClosed);
+        verifyNoInteractions(onClientClosed);
+    }
+
+    /**
+     * Verifies that sending an iterable of events that exceeds batch size throws exception.
+     */
+    @Test
+    public void sendEventsExceedsBatchSize() {
+        //Arrange
+        // EC is the prefix they use when creating a link that sends to the service round-robin.
+        when(connection.createSendLink(eq(EVENT_HUB_NAME), eq(EVENT_HUB_NAME), any()))
+            .thenReturn(Mono.just(sendLink));
+        when(sendLink.getLinkSize()).thenReturn(Mono.just(1024));
+        TracerProvider tracerProvider = new TracerProvider(Collections.emptyList());
+        final EventHubProducerAsyncClient asyncProducer = new EventHubProducerAsyncClient(HOSTNAME, EVENT_HUB_NAME,
+            connectionProcessor, retryOptions, tracerProvider, messageSerializer, Schedulers.parallel(), false, onClientClosed);
+        final EventHubProducerClient producer = new EventHubProducerClient(asyncProducer, retryOptions.getTryTimeout());
+
+        //Act & Assert
+        final Iterable<EventData> tooManyEvents = Flux.range(0, 1024).map(number -> {
+            final String contents = "event-data-" + number;
+            return new EventData(contents.getBytes(UTF_8));
+        }).toIterable();
+
+        AmqpException amqpException = Assertions.assertThrows(AmqpException.class, () -> producer.send(tooManyEvents));
+        Assertions.assertTrue(amqpException.getMessage().startsWith("EventData does not fit into maximum number of "
+            + "batches. '1'"));
     }
 
     /**
@@ -291,7 +320,7 @@ public class EventHubProducerClientTest {
 
         messagesSent.forEach(message -> Assertions.assertEquals(Section.SectionType.Data, message.getBody().getType()));
 
-        verifyZeroInteractions(onClientClosed);
+        verifyNoInteractions(onClientClosed);
     }
 
     /**
@@ -375,7 +404,7 @@ public class EventHubProducerClientTest {
             .start(eq("EventHubs.message"), any(), eq(ProcessKind.MESSAGE));
         verify(tracer1, times(2)).end(eq("success"), isNull(), any());
 
-        verifyZeroInteractions(onClientClosed);
+        verifyNoInteractions(onClientClosed);
     }
 
     /**

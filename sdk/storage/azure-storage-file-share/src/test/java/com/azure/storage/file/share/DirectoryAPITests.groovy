@@ -26,18 +26,18 @@ class DirectoryAPITests extends APISpec {
     static def filePermission = "O:S-1-5-21-2127521184-1604012920-1887927527-21560751G:S-1-5-21-2127521184-1604012920-1887927527-513D:AI(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;S-1-5-21-397955417-626881126-188441444-3053964)S:NO_ACCESS_CONTROL"
 
     def setup() {
-        shareName = testResourceName.randomName(methodName, 60)
-        directoryPath = testResourceName.randomName(methodName, 60)
-        shareClient = shareBuilderHelper(interceptorManager, shareName).buildClient()
+        shareName = namer.getRandomName(60)
+        directoryPath = namer.getRandomName(60)
+        shareClient = shareBuilderHelper(shareName).buildClient()
         shareClient.create()
-        primaryDirectoryClient = directoryBuilderHelper(interceptorManager, shareName, directoryPath).buildDirectoryClient()
+        primaryDirectoryClient = directoryBuilderHelper(shareName, directoryPath).buildDirectoryClient()
         testMetadata = Collections.singletonMap("testmetadata", "value")
         smbProperties = new FileSmbProperties().setNtfsFileAttributes(EnumSet.<NtfsFileAttributes>of(NtfsFileAttributes.NORMAL))
     }
 
     def "Get directory URL"() {
         given:
-        def accountName = StorageSharedKeyCredential.fromConnectionString(connectionString).getAccountName()
+        def accountName = StorageSharedKeyCredential.fromConnectionString(env.primaryAccount.connectionString).getAccountName()
         def expectURL = String.format("https://%s.file.core.windows.net/%s/%s", accountName, shareName, directoryPath)
 
         when:
@@ -49,18 +49,25 @@ class DirectoryAPITests extends APISpec {
 
     def "Get share snapshot URL"() {
         given:
-        def accountName = StorageSharedKeyCredential.fromConnectionString(connectionString).getAccountName()
+        def accountName = StorageSharedKeyCredential.fromConnectionString(env.primaryAccount.connectionString).getAccountName()
         def expectURL = String.format("https://%s.file.core.windows.net/%s/%s", accountName, shareName, directoryPath)
 
         when:
         ShareSnapshotInfo shareSnapshotInfo = shareClient.createSnapshot()
-        expectURL = expectURL + "?snapshot=" + shareSnapshotInfo.getSnapshot()
-        ShareDirectoryClient newDirClient = shareBuilderHelper(interceptorManager, shareName).snapshot(shareSnapshotInfo.getSnapshot())
+        expectURL = expectURL + "?sharesnapshot=" + shareSnapshotInfo.getSnapshot()
+        ShareDirectoryClient newDirClient = shareBuilderHelper(shareName).snapshot(shareSnapshotInfo.getSnapshot())
             .buildClient().getDirectoryClient(directoryPath)
         def directoryURL = newDirClient.getDirectoryUrl()
 
         then:
         expectURL == directoryURL
+
+        when:
+        def snapshotEndpoint = String.format("https://%s.file.core.windows.net/%s/%s?sharesnapshot=%s", accountName, shareName, directoryPath, shareSnapshotInfo.getSnapshot())
+        ShareDirectoryClient client = getDirectoryClient(StorageSharedKeyCredential.fromConnectionString(env.primaryAccount.connectionString), snapshotEndpoint)
+
+        then:
+        client.getDirectoryUrl() == snapshotEndpoint
     }
 
     def "Get sub directory client"() {
@@ -94,7 +101,7 @@ class DirectoryAPITests extends APISpec {
 
     def "Exists error"() {
         setup:
-        primaryDirectoryClient = directoryBuilderHelper(interceptorManager, shareName, directoryPath)
+        primaryDirectoryClient = directoryBuilderHelper(shareName, directoryPath)
             .sasToken("sig=dummyToken").buildDirectoryClient()
 
         when:
@@ -112,10 +119,10 @@ class DirectoryAPITests extends APISpec {
 
     def "Create directory error"() {
         given:
-        def testShareName = testResourceName.randomName(methodName, 60)
+        def testShareName = namer.getRandomName(60)
 
         when:
-        directoryBuilderHelper(interceptorManager, testShareName, directoryPath).buildDirectoryClient().create()
+        directoryBuilderHelper(testShareName, directoryPath).buildDirectoryClient().create()
 
         then:
         def e = thrown(ShareStorageException)
@@ -146,9 +153,32 @@ class DirectoryAPITests extends APISpec {
     def "Create directory with file permission key"() {
         setup:
         def filePermissionKey = shareClient.createPermission(filePermission)
-        smbProperties.setFileCreationTime(getUTCNow())
-            .setFileLastWriteTime(getUTCNow())
+        smbProperties.setFileCreationTime(namer.getUtcNow())
+            .setFileLastWriteTime(namer.getUtcNow())
             .setFilePermissionKey(filePermissionKey)
+        when:
+        def resp = primaryDirectoryClient.createWithResponse(smbProperties, null, null, null, null)
+
+        then:
+        FileTestHelper.assertResponseStatusCode(resp, 201)
+        resp.getValue().getSmbProperties()
+        resp.getValue().getSmbProperties().getFilePermissionKey()
+        resp.getValue().getSmbProperties().getNtfsFileAttributes()
+        resp.getValue().getSmbProperties().getFileLastWriteTime()
+        resp.getValue().getSmbProperties().getFileCreationTime()
+        resp.getValue().getSmbProperties().getFileChangeTime()
+        resp.getValue().getSmbProperties().getParentId()
+        resp.getValue().getSmbProperties().getFileId()
+    }
+
+    def "Create directory with ntfs attributes"() {
+        setup:
+        def filePermissionKey = shareClient.createPermission(filePermission)
+        def attributes = EnumSet.of(NtfsFileAttributes.HIDDEN, NtfsFileAttributes.DIRECTORY)
+        smbProperties.setFileCreationTime(namer.getUtcNow())
+            .setFileLastWriteTime(namer.getUtcNow())
+            .setFilePermissionKey(filePermissionKey)
+            .setNtfsFileAttributes(attributes)
         when:
         def resp = primaryDirectoryClient.createWithResponse(smbProperties, null, null, null, null)
 
@@ -240,8 +270,8 @@ class DirectoryAPITests extends APISpec {
     def "Set properties file permission key"() {
         given:
         def filePermissionKey = shareClient.createPermission(filePermission)
-        smbProperties.setFileCreationTime(getUTCNow())
-            .setFileLastWriteTime(getUTCNow())
+        smbProperties.setFileCreationTime(namer.getUtcNow())
+            .setFileLastWriteTime(namer.getUtcNow())
             .setFilePermissionKey(filePermissionKey)
         primaryDirectoryClient.create()
         def resp = primaryDirectoryClient.setPropertiesWithResponse(smbProperties, null, null, null)
@@ -350,7 +380,7 @@ class DirectoryAPITests extends APISpec {
         given:
         primaryDirectoryClient.create()
         def nameList = new LinkedList()
-        def dirPrefix = testResourceName.randomName(methodName, 60)
+        def dirPrefix = namer.getRandomName(60)
         for (int i = 0; i < 2; i++) {
             def subDirClient = primaryDirectoryClient.getSubdirectoryClient(dirPrefix + i)
             subDirClient.create()
@@ -365,7 +395,7 @@ class DirectoryAPITests extends APISpec {
         }
 
         when:
-        def fileRefIter = primaryDirectoryClient.listFilesAndDirectories(prefix, maxResults, null, null).iterator()
+        def fileRefIter = primaryDirectoryClient.listFilesAndDirectories(namer.getResourcePrefix() + extraPrefix, maxResults, null, null).iterator()
 
         then:
         for (int i = 0; i < numOfResults; i++) {
@@ -374,10 +404,39 @@ class DirectoryAPITests extends APISpec {
         !fileRefIter.hasNext()
 
         where:
-        prefix                                         | maxResults | numOfResults
-        null                                           | null       | 3
-        "directoryapitestslistfilesanddirectoriesargs" | 1          | 3
-        "noOp"                                         | 3          | 0
+        extraPrefix   | maxResults | numOfResults
+        ""            | null       | 3
+        ""            | 1          | 3
+        "noOp"        | 3          | 0
+    }
+
+    def "List max results by page"() {
+        given:
+        primaryDirectoryClient.create()
+        def nameList = new LinkedList()
+        def dirPrefix = namer.getRandomName(60)
+        for (int i = 0; i < 2; i++) {
+            def subDirClient = primaryDirectoryClient.getSubdirectoryClient(dirPrefix + i)
+            subDirClient.create()
+            for (int j = 0; j < 2; j++) {
+                def num = i * 2 + j + 3
+                subDirClient.createFile(dirPrefix + num, 1024)
+            }
+        }
+        primaryDirectoryClient.createFile(dirPrefix + 2, 1024)
+        for (int i = 0; i < 3; i++) {
+            nameList.add(dirPrefix + i)
+        }
+
+        when:
+        def fileRefIter = primaryDirectoryClient
+            .listFilesAndDirectories(namer.getResourcePrefix(), null, null, null)
+            .iterableByPage(1).iterator()
+
+        then:
+        for (def page : fileRefIter) {
+            assert page.value.size() == 1
+        }
     }
 
     @Unroll
@@ -494,8 +553,8 @@ class DirectoryAPITests extends APISpec {
         given:
         primaryDirectoryClient.create()
         def filePermissionKey = shareClient.createPermission(filePermission)
-        smbProperties.setFileCreationTime(getUTCNow())
-            .setFileLastWriteTime(getUTCNow())
+        smbProperties.setFileCreationTime(namer.getUtcNow())
+            .setFileLastWriteTime(namer.getUtcNow())
             .setFilePermissionKey(filePermissionKey)
         expect:
         FileTestHelper.assertResponseStatusCode(
@@ -557,8 +616,8 @@ class DirectoryAPITests extends APISpec {
         primaryDirectoryClient.create()
         ShareFileHttpHeaders httpHeaders = new ShareFileHttpHeaders()
             .setContentType("txt")
-        smbProperties.setFileCreationTime(getUTCNow())
-            .setFileLastWriteTime(getUTCNow())
+        smbProperties.setFileCreationTime(namer.getUtcNow())
+            .setFileLastWriteTime(namer.getUtcNow())
 
         expect:
         FileTestHelper.assertResponseStatusCode(
@@ -615,7 +674,7 @@ class DirectoryAPITests extends APISpec {
             1, 1), ZoneOffset.UTC).toString()
 
         when:
-        def shareSnapshotClient = directoryBuilderHelper(interceptorManager, shareName, directoryPath).snapshot(snapshot).buildDirectoryClient()
+        def shareSnapshotClient = directoryBuilderHelper(shareName, directoryPath).snapshot(snapshot).buildDirectoryClient()
 
         then:
         snapshot == shareSnapshotClient.getShareSnapshotId()
@@ -629,5 +688,40 @@ class DirectoryAPITests extends APISpec {
     def "Get Directory Path"() {
         expect:
         directoryPath == primaryDirectoryClient.getDirectoryPath()
+    }
+
+    // This tests the policy is in the right place because if it were added per retry, it would be after the credentials and auth would fail because we changed a signed header.
+    def "Per call policy"() {
+        given:
+        primaryDirectoryClient.create()
+
+        def directoryClient = directoryBuilderHelper(primaryDirectoryClient.getShareName(), primaryDirectoryClient.getDirectoryPath())
+            .addPolicy(getPerCallVersionPolicy()).buildDirectoryClient()
+
+        when:
+        def response = directoryClient.getPropertiesWithResponse(null, null)
+
+        then:
+        notThrown(ShareStorageException)
+        response.getHeaders().getValue("x-ms-version") == "2017-11-09"
+    }
+
+    @Unroll
+    def "Root directory support"() {
+        given:
+        // share:/dir1/dir2
+        def dir1Name = "dir1"
+        def dir2Name = "dir2"
+        shareClient.createDirectory(dir1Name).createSubdirectory(dir2Name)
+        ShareDirectoryClient rootDirectory = shareClient.getDirectoryClient(rootDirPath)
+
+        expect:
+        rootDirectory.exists() // can operate on root directory
+        rootDirectory.getSubdirectoryClient(dir1Name).exists() // can operate on a subdirectory
+
+        where:
+        _ | rootDirPath
+        _ | ""
+        _ | "/"
     }
 }

@@ -3,8 +3,10 @@
 package com.azure.cosmos.implementation.changefeed;
 
 import com.azure.cosmos.ChangeFeedProcessor;
+import com.azure.cosmos.implementation.changefeed.implementation.ChangeFeedState;
+import com.azure.cosmos.implementation.feedranges.FeedRangeInternal;
 
-import java.time.ZonedDateTime;
+import java.time.Instant;
 import java.util.Map;
 
 /**
@@ -39,6 +41,10 @@ public interface Lease {
      * @return the timestamp of the lease.
      */
     String getTimestamp();
+
+    ChangeFeedState getContinuationState(
+        String containerRid,
+        FeedRangeInternal feedRange);
 
     /**
      * Gets the continuation token used to determine the last processed point of the Change Feed.
@@ -94,7 +100,7 @@ public interface Lease {
      *
      * @param timestamp the timestamp of the lease.
      */
-    void setTimestamp(ZonedDateTime timestamp);
+    void setTimestamp(Instant timestamp);
 
     /**
      * Sets the lease ID.
@@ -119,4 +125,12 @@ public interface Lease {
      * @param properties the custom lease item.
      */
     void setProperties(Map<String,String> properties);
+
+    /**
+     * Sets the lease properties.
+     *
+     *
+     * @param lease the input representation of a lease document.
+     */
+    void setServiceItemLease(Lease lease);
 }

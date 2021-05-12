@@ -30,6 +30,11 @@ public interface Vault extends HasInner<VaultInner>, Resource, GroupableResource
     String eTag();
 
     /**
+     * @return the identity value.
+     */
+    IdentityData identity();
+
+    /**
      * @return the properties value.
      */
     VaultProperties properties();
@@ -74,6 +79,18 @@ public interface Vault extends HasInner<VaultInner>, Resource, GroupableResource
         }
 
         /**
+         * The stage of the vault definition allowing to specify Identity.
+         */
+        interface WithIdentity {
+            /**
+             * Specifies identity.
+             * @param identity the identity parameter value
+             * @return the next definition stage
+             */
+            WithCreate withIdentity(IdentityData identity);
+        }
+
+        /**
          * The stage of the vault definition allowing to specify Properties.
          */
         interface WithProperties {
@@ -102,13 +119,13 @@ public interface Vault extends HasInner<VaultInner>, Resource, GroupableResource
          * the resource to be created (via {@link WithCreate#create()}), but also allows
          * for any other optional settings to be specified.
          */
-        interface WithCreate extends Creatable<Vault>, Resource.DefinitionWithTags<WithCreate>, DefinitionStages.WithETag, DefinitionStages.WithProperties, DefinitionStages.WithSku {
+        interface WithCreate extends Creatable<Vault>, Resource.DefinitionWithTags<WithCreate>, DefinitionStages.WithETag, DefinitionStages.WithIdentity, DefinitionStages.WithProperties, DefinitionStages.WithSku {
         }
     }
     /**
      * The template for a Vault update operation, containing all the settings that can be modified.
      */
-    interface Update extends Appliable<Vault>, Resource.UpdateWithTags<Update>, UpdateStages.WithETag, UpdateStages.WithProperties, UpdateStages.WithSku {
+    interface Update extends Appliable<Vault>, Resource.UpdateWithTags<Update>, UpdateStages.WithETag, UpdateStages.WithIdentity, UpdateStages.WithProperties, UpdateStages.WithSku {
     }
 
     /**
@@ -125,6 +142,18 @@ public interface Vault extends HasInner<VaultInner>, Resource, GroupableResource
              * @return the next update stage
              */
             Update withETag(String eTag);
+        }
+
+        /**
+         * The stage of the vault update allowing to specify Identity.
+         */
+        interface WithIdentity {
+            /**
+             * Specifies identity.
+             * @param identity the identity parameter value
+             * @return the next update stage
+             */
+            Update withIdentity(IdentityData identity);
         }
 
         /**

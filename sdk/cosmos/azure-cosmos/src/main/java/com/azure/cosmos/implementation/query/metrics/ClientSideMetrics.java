@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 package com.azure.cosmos.implementation.query.metrics;
 
-import org.apache.commons.lang3.tuple.ImmutablePair;
+import com.azure.cosmos.implementation.apachecommons.lang.tuple.ImmutablePair;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -64,9 +64,12 @@ public class ClientSideMetrics {
     }
 
     /**
-     * Gets the request charge for this continuation of the query.
+     * Gets the request charge as request units (RU) consumed by the operation.
+     * <p>
+     * For more information about the RU and factors that can impact the effective charges please visit
+     * <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/request-units">Request Units in Azure Cosmos DB</a>
      *
-     * @return the requestCharge
+     * @return the request charge.
      */
     public double getRequestCharge() {
         return requestCharge;

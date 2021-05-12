@@ -7,10 +7,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Represents the consistency levels supported for Cosmos DB client operations in the Azure Cosmos DB database service.
+ * Represents the consistency levels supported for Azure Cosmos DB client operations in the Azure Cosmos DB service.
  * <p>
  * The requested ConsistencyLevel must match or be weaker than that provisioned for the database account. Consistency
  * levels by order of strength are STRONG, BOUNDED_STALENESS, SESSION and EVENTUAL.
+ *
+ * Refer to consistency level documentation for additional details: https://docs.microsoft.com/en-us/azure/cosmos-db/consistency-levels
  */
 public enum ConsistencyLevel {
 
@@ -66,7 +68,7 @@ public enum ConsistencyLevel {
      * @param consistencyLevel String value of consistency level
      * @return ConsistencyLevel Enum consistency level
      */
-    public static ConsistencyLevel fromServiceSerializedFormat(String consistencyLevel) {
+    static ConsistencyLevel fromServiceSerializedFormat(String consistencyLevel) {
         // this is 100x faster than org.apache.commons.lang3.EnumUtils.getEnum(String)
         // for more detail refer to https://github.com/moderakh/azure-cosmosdb-benchmark
         return consistencyLevelHashMap.get(consistencyLevel);

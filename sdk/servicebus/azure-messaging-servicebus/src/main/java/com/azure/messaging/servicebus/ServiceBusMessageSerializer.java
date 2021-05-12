@@ -3,9 +3,20 @@
 
 package com.azure.messaging.servicebus;
 
+import static com.azure.core.amqp.AmqpMessageConstant.SCHEDULED_ENQUEUE_UTC_TIME_NAME;
+import static com.azure.core.amqp.AmqpMessageConstant.PARTITION_KEY_ANNOTATION_NAME;
+import com.azure.core.amqp.exception.AmqpResponseCode;
 import com.azure.core.amqp.implementation.MessageSerializer;
 import com.azure.core.amqp.implementation.RequestResponseUtils;
+import com.azure.core.amqp.models.AmqpAddress;
+import com.azure.core.amqp.models.AmqpAnnotatedMessage;
+import com.azure.core.amqp.models.AmqpMessageHeader;
+import com.azure.core.amqp.models.AmqpMessageId;
+import com.azure.core.amqp.models.AmqpMessageProperties;
+import com.azure.core.util.BinaryData;
 import com.azure.core.util.logging.ClientLogger;
+import com.azure.messaging.servicebus.implementation.ManagementConstants;
+import com.azure.messaging.servicebus.implementation.MessageWithLockToken;
 import com.azure.messaging.servicebus.implementation.Messages;
 import org.apache.qpid.proton.Proton;
 import org.apache.qpid.proton.amqp.Binary;
@@ -21,6 +32,8 @@ import org.apache.qpid.proton.amqp.messaging.AmqpSequence;
 import org.apache.qpid.proton.amqp.messaging.AmqpValue;
 import org.apache.qpid.proton.amqp.messaging.ApplicationProperties;
 import org.apache.qpid.proton.amqp.messaging.Data;
+import org.apache.qpid.proton.amqp.messaging.DeliveryAnnotations;
+import org.apache.qpid.proton.amqp.messaging.Footer;
 import org.apache.qpid.proton.amqp.messaging.MessageAnnotations;
 import org.apache.qpid.proton.amqp.messaging.Properties;
 import org.apache.qpid.proton.amqp.messaging.Section;
@@ -30,7 +43,11 @@ import org.apache.qpid.proton.message.Message;
 
 import java.lang.reflect.Array;
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -38,22 +55,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Deserializes and serializes messages to and from Azure Service Bus.
  */
 class ServiceBusMessageSerializer implements MessageSerializer {
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
-    private static final String ENQUEUED_TIME_UTC_NAME = "x-opt-enqueued-time";
-    private static final String SCHEDULED_ENQUEUE_TIME_NAME = "x-opt-scheduled-enqueue-time";
-    private static final String SEQUENCE_NUMBER_NAME = "x-opt-sequence-number";
-    private static final String LOCKED_UNTIL_NAME = "x-opt-locked-until";
-    private static final String PARTITION_KEY_NAME = "x-opt-partition-key";
-    private static final String VIA_PARTITION_KEY_NAME = "x-opt-via-partition-key";
-    private static final String DEAD_LETTER_SOURCE_NAME = "x-opt-deadletter-source";
-    private static final String REQUEST_RESPONSE_MESSAGES = "messages";
-    private static final String REQUEST_RESPONSE_MESSAGE = "message";
-    private static final int REQUEST_RESPONSE_OK_STATUS_CODE = 200;
 
     private final ClientLogger logger = new ClientLogger(ServiceBusMessageSerializer.class);
 
@@ -61,7 +69,7 @@ class ServiceBusMessageSerializer implements MessageSerializer {
      * Gets the serialized size of the AMQP message.
      */
     @Override
-    public int getSize(org.apache.qpid.proton.message.Message amqpMessage) {
+    public int getSize(Message amqpMessage) {
         if (amqpMessage == null) {
             return 0;
         }
@@ -96,8 +104,8 @@ class ServiceBusMessageSerializer implements MessageSerializer {
     }
 
     /**
-     * Creates the AMQP message represented by this {@code object}. Currently, only supports serializing
-     * {@link ServiceBusMessage}.
+     * Creates the AMQP message represented by this {@code object}. Currently, only supports serializing {@link
+     * ServiceBusMessage}.
      *
      * @param object Concrete object to deserialize.
      *
@@ -106,7 +114,7 @@ class ServiceBusMessageSerializer implements MessageSerializer {
      * @throws IllegalArgumentException if {@code object} is not an instance of {@link ServiceBusMessage}.
      */
     @Override
-    public <T> org.apache.qpid.proton.message.Message serialize(T object) {
+    public <T> Message serialize(T object) {
         Objects.requireNonNull(object, "'object' to serialize cannot be null.");
 
         if (!(object instanceof ServiceBusMessage)) {
@@ -115,14 +123,14 @@ class ServiceBusMessageSerializer implements MessageSerializer {
         }
 
         final ServiceBusMessage brokeredMessage = (ServiceBusMessage) object;
-        final org.apache.qpid.proton.message.Message amqpMessage = Proton.message();
-        final byte[] body = brokeredMessage.getBody();
+        final Message amqpMessage = Proton.message();
+        final byte[] body = brokeredMessage.getBody().toBytes();
 
         //TODO (conniey): support AMQP sequence and AMQP value.
         amqpMessage.setBody(new Data(new Binary(body)));
 
-        if (brokeredMessage.getProperties() != null) {
-            amqpMessage.setApplicationProperties(new ApplicationProperties(brokeredMessage.getProperties()));
+        if (brokeredMessage.getApplicationProperties() != null) {
+            amqpMessage.setApplicationProperties(new ApplicationProperties(brokeredMessage.getApplicationProperties()));
         }
 
         if (brokeredMessage.getTimeToLive() != null) {
@@ -132,169 +140,307 @@ class ServiceBusMessageSerializer implements MessageSerializer {
         if (amqpMessage.getProperties() == null) {
             amqpMessage.setProperties(new Properties());
         }
-
         amqpMessage.setMessageId(brokeredMessage.getMessageId());
         amqpMessage.setContentType(brokeredMessage.getContentType());
         amqpMessage.setCorrelationId(brokeredMessage.getCorrelationId());
-        amqpMessage.setSubject(brokeredMessage.getLabel());
-        amqpMessage.getProperties().setTo(brokeredMessage.getTo());
+        amqpMessage.setSubject(brokeredMessage.getSubject());
         amqpMessage.setReplyTo(brokeredMessage.getReplyTo());
         amqpMessage.setReplyToGroupId(brokeredMessage.getReplyToSessionId());
         amqpMessage.setGroupId(brokeredMessage.getSessionId());
 
+        final AmqpMessageProperties brokeredProperties = brokeredMessage.getRawAmqpMessage().getProperties();
+
+        amqpMessage.setContentEncoding(brokeredProperties.getContentEncoding());
+        if (brokeredProperties.getGroupSequence() != null) {
+            amqpMessage.setGroupSequence(brokeredProperties.getGroupSequence());
+        }
+        amqpMessage.getProperties().setTo(brokeredMessage.getTo());
+        amqpMessage.getProperties().setUserId(new Binary(brokeredProperties.getUserId()));
+
+        if (brokeredProperties.getAbsoluteExpiryTime() != null) {
+            amqpMessage.getProperties().setAbsoluteExpiryTime(Date.from(brokeredProperties.getAbsoluteExpiryTime()
+                .toInstant()));
+        }
+        if (brokeredProperties.getCreationTime() != null) {
+            amqpMessage.getProperties().setCreationTime(Date.from(brokeredProperties.getCreationTime().toInstant()));
+        }
+
+        //set footer
+        amqpMessage.setFooter(new Footer(brokeredMessage.getRawAmqpMessage().getFooter()));
+
+        //set header
+        AmqpMessageHeader header = brokeredMessage.getRawAmqpMessage().getHeader();
+        if (header.getDeliveryCount() != null) {
+            amqpMessage.setDeliveryCount(header.getDeliveryCount());
+        }
+        if (header.getPriority() != null) {
+            amqpMessage.setPriority(header.getPriority());
+        }
+        if (header.isDurable() != null) {
+            amqpMessage.setDurable(header.isDurable());
+        }
+        if (header.isFirstAcquirer() != null) {
+            amqpMessage.setFirstAcquirer(header.isFirstAcquirer());
+        }
+        if (header.getTimeToLive() != null) {
+            amqpMessage.setTtl(header.getTimeToLive().toMillis());
+        }
+
         final Map<Symbol, Object> messageAnnotationsMap = new HashMap<>();
         if (brokeredMessage.getScheduledEnqueueTime() != null) {
-            messageAnnotationsMap.put(Symbol.valueOf(SCHEDULED_ENQUEUE_TIME_NAME),
-                Date.from(brokeredMessage.getScheduledEnqueueTime()));
+            messageAnnotationsMap.put(Symbol.valueOf(SCHEDULED_ENQUEUE_UTC_TIME_NAME.getValue()),
+                Date.from(brokeredMessage.getScheduledEnqueueTime().toInstant()));
         }
 
         final String partitionKey = brokeredMessage.getPartitionKey();
         if (partitionKey != null && !partitionKey.isEmpty()) {
-            messageAnnotationsMap.put(Symbol.valueOf(PARTITION_KEY_NAME), brokeredMessage.getPartitionKey());
-        }
-
-        final String viaPartitionKey = brokeredMessage.getViaPartitionKey();
-        if (viaPartitionKey != null && !viaPartitionKey.isEmpty()) {
-            messageAnnotationsMap.put(Symbol.valueOf(VIA_PARTITION_KEY_NAME), viaPartitionKey);
+            messageAnnotationsMap.put(Symbol.valueOf(PARTITION_KEY_ANNOTATION_NAME.getValue()),
+                brokeredMessage.getPartitionKey());
         }
 
         amqpMessage.setMessageAnnotations(new MessageAnnotations(messageAnnotationsMap));
+
+        // Set Delivery Annotations.
+        final Map<Symbol, Object> deliveryAnnotationsMap = new HashMap<>();
+
+        final Map<String, Object> deliveryAnnotations = brokeredMessage.getRawAmqpMessage()
+            .getDeliveryAnnotations();
+        for (Map.Entry<String, Object> deliveryEntry : deliveryAnnotations.entrySet()) {
+            deliveryAnnotationsMap.put(Symbol.valueOf(deliveryEntry.getKey()), deliveryEntry.getValue());
+        }
+
+        amqpMessage.setDeliveryAnnotations(new DeliveryAnnotations(deliveryAnnotationsMap));
 
         return amqpMessage;
     }
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T> T deserialize(org.apache.qpid.proton.message.Message message, Class<T> clazz) {
+    public <T> T deserialize(Message message, Class<T> clazz) {
         Objects.requireNonNull(message, "'message' cannot be null.");
         Objects.requireNonNull(clazz, "'clazz' cannot be null.");
 
         if (clazz == ServiceBusReceivedMessage.class) {
             return (T) deserializeMessage(message);
-        } else if (clazz == List.class) {
-            return (T) deserializeListOfMessages(message);
         } else {
             throw logger.logExceptionAsError(new IllegalArgumentException(
-                "Deserialization only supports ServiceBusReceivedMessage."));
+                String.format(Messages.CLASS_NOT_A_SUPPORTED_TYPE, clazz)));
         }
     }
 
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> List<T> deserializeList(Message message, Class<T> clazz) {
+        if (clazz == ServiceBusReceivedMessage.class) {
+            return (List<T>) deserializeListOfMessages(message);
+        } else if (clazz == OffsetDateTime.class) {
+            return (List<T>) deserializeListOfOffsetDateTime(message);
+        } else if (clazz == OffsetDateTime.class) {
+            return (List<T>) deserializeListOfOffsetDateTime(message);
+        } else if (clazz == Long.class) {
+            return (List<T>) deserializeListOfLong(message);
+        } else {
+            throw logger.logExceptionAsError(new IllegalArgumentException(
+                String.format(Messages.CLASS_NOT_A_SUPPORTED_TYPE, clazz)));
+        }
+    }
+
+    private List<Long> deserializeListOfLong(Message amqpMessage) {
+        if (amqpMessage.getBody() instanceof AmqpValue) {
+            AmqpValue amqpValue = ((AmqpValue) amqpMessage.getBody());
+            if (amqpValue.getValue() instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> responseBody = (Map<String, Object>) amqpValue.getValue();
+                Object expirationListObj = responseBody.get(ManagementConstants.SEQUENCE_NUMBERS);
+
+                if (expirationListObj instanceof long[]) {
+                    return Arrays.stream((long[]) expirationListObj)
+                        .boxed()
+                        .collect(Collectors.toList());
+                }
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    private List<OffsetDateTime> deserializeListOfOffsetDateTime(Message amqpMessage) {
+        if (amqpMessage.getBody() instanceof AmqpValue) {
+            AmqpValue amqpValue = ((AmqpValue) amqpMessage.getBody());
+            if (amqpValue.getValue() instanceof  Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> responseBody = (Map<String, Object>) amqpValue.getValue();
+                Object expirationListObj = responseBody.get(ManagementConstants.EXPIRATIONS);
+
+                if (expirationListObj instanceof Date[]) {
+                    return Arrays.stream((Date[]) expirationListObj)
+                        .map(date -> date.toInstant().atOffset(ZoneOffset.UTC))
+                        .collect(Collectors.toList());
+                }
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    @SuppressWarnings("rawtypes")
     private List<ServiceBusReceivedMessage> deserializeListOfMessages(Message amqpMessage) {
-        //maintain the order of elements because last sequence number needs to be maintain.
-        List<Message> listAmqpMessages = convertAmqpValueMessageToBrokeredMessage(amqpMessage);
+        final List<ServiceBusReceivedMessage> messageList = new ArrayList<>();
+        final AmqpResponseCode statusCode = RequestResponseUtils.getStatusCode(amqpMessage);
 
-        List<ServiceBusReceivedMessage> receivedMessageList = new ArrayList<>();
-        for (Message oneAmqpMessage:listAmqpMessages) {
-            ServiceBusReceivedMessage serviceBusReceivedMessage = deserializeMessage(oneAmqpMessage);
-            receivedMessageList.add(serviceBusReceivedMessage);
+        if (statusCode != AmqpResponseCode.OK) {
+            logger.warning("AMQP response did not contain OK status code. Actual: {}", statusCode);
+            return Collections.emptyList();
         }
 
-        return receivedMessageList;
+        final Object responseBodyMap = ((AmqpValue) amqpMessage.getBody()).getValue();
+
+        if (responseBodyMap == null) {
+            logger.warning("AMQP response did not contain a body.");
+            return Collections.emptyList();
+        } else if (!(responseBodyMap instanceof Map)) {
+            logger.warning("AMQP response body is not correct instance. Expected: {}. Actual: {}",
+                Map.class, responseBodyMap.getClass());
+            return Collections.emptyList();
+        }
+
+        final Object messages = ((Map) responseBodyMap).get(ManagementConstants.MESSAGES);
+        if (messages == null) {
+            logger.warning("Response body did not contain key: {}", ManagementConstants.MESSAGES);
+            return Collections.emptyList();
+        } else if (!(messages instanceof Iterable)) {
+            logger.warning("Response body contents is not the correct type. Expected: {}. Actual: {}",
+                Iterable.class, messages.getClass());
+            return Collections.emptyList();
+        }
+
+        for (Object message : (Iterable) messages) {
+            if (!(message instanceof Map)) {
+                logger.warning("Message inside iterable of message is not correct type. Expected: {}. Actual: {}",
+                    Map.class, message.getClass());
+                continue;
+            }
+
+            final Message responseMessage = Message.Factory.create();
+            final Binary messagePayLoad = (Binary) ((Map) message).get(ManagementConstants.MESSAGE);
+
+            responseMessage.decode(messagePayLoad.getArray(), messagePayLoad.getArrayOffset(),
+                messagePayLoad.getLength());
+
+            final ServiceBusReceivedMessage receivedMessage = deserializeMessage(responseMessage);
+
+            // if amqp message have lockToken
+            if (((Map) message).containsKey(ManagementConstants.LOCK_TOKEN_KEY)) {
+                receivedMessage.setLockToken((UUID) ((Map) message).get(ManagementConstants.LOCK_TOKEN_KEY));
+            }
+
+            messageList.add(receivedMessage);
+        }
+
+        return messageList;
     }
 
-    private ServiceBusReceivedMessage deserializeMessage(org.apache.qpid.proton.message.Message amqpMessage) {
-        final ServiceBusReceivedMessage brokeredMessage;
+    private ServiceBusReceivedMessage deserializeMessage(Message amqpMessage) {
+        final byte[] bytes;
         final Section body = amqpMessage.getBody();
         if (body != null) {
             //TODO (conniey): Support other AMQP types like AmqpValue and AmqpSequence.
             if (body instanceof Data) {
                 final Binary messageData = ((Data) body).getValue();
-                final byte[] bytes = messageData.getArray();
-                brokeredMessage = new ServiceBusReceivedMessage(bytes);
+                bytes = messageData.getArray();
             } else {
                 logger.warning(String.format(Messages.MESSAGE_NOT_OF_TYPE, body.getType()));
-                brokeredMessage = new ServiceBusReceivedMessage(EMPTY_BYTE_ARRAY);
+                bytes = EMPTY_BYTE_ARRAY;
             }
         } else {
             logger.warning(String.format(Messages.MESSAGE_NOT_OF_TYPE, "null"));
-            brokeredMessage = new ServiceBusReceivedMessage(EMPTY_BYTE_ARRAY);
+            bytes = EMPTY_BYTE_ARRAY;
         }
+        final ServiceBusReceivedMessage brokeredMessage = new ServiceBusReceivedMessage(BinaryData.fromBytes(bytes));
+        AmqpAnnotatedMessage brokeredAmqpAnnotatedMessage = brokeredMessage.getRawAmqpMessage();
 
         // Application properties
         ApplicationProperties applicationProperties = amqpMessage.getApplicationProperties();
         if (applicationProperties != null) {
-            brokeredMessage.getProperties().putAll(applicationProperties.getValue());
+            final Map<String, Object> propertiesValue = applicationProperties.getValue();
+            brokeredAmqpAnnotatedMessage.getApplicationProperties().putAll(propertiesValue);
         }
 
         // Header
-        brokeredMessage.setTimeToLive(Duration.ofMillis(amqpMessage.getTtl()));
-        brokeredMessage.setDeliveryCount(amqpMessage.getDeliveryCount());
+        final AmqpMessageHeader brokeredHeader = brokeredAmqpAnnotatedMessage.getHeader();
+        brokeredHeader.setTimeToLive(Duration.ofMillis(amqpMessage.getTtl()));
+        brokeredHeader.setDeliveryCount(amqpMessage.getDeliveryCount());
+        brokeredHeader.setDurable(amqpMessage.getHeader().getDurable());
+        brokeredHeader.setFirstAcquirer(amqpMessage.getHeader().getFirstAcquirer());
+        brokeredHeader.setPriority(amqpMessage.getPriority());
+
+        // Footer
+        final Footer footer = amqpMessage.getFooter();
+        if (footer != null && footer.getValue() != null) {
+            @SuppressWarnings("unchecked") final Map<Symbol, Object> footerValue = footer.getValue();
+            setValues(footerValue, brokeredAmqpAnnotatedMessage.getFooter());
+
+        }
 
         // Properties
+        final AmqpMessageProperties brokeredProperties = brokeredAmqpAnnotatedMessage.getProperties();
+        brokeredProperties.setReplyToGroupId(amqpMessage.getReplyToGroupId());
+        final String replyTo = amqpMessage.getReplyTo();
+        if (replyTo != null) {
+            brokeredProperties.setReplyTo(new AmqpAddress(amqpMessage.getReplyTo()));
+        }
         final Object messageId = amqpMessage.getMessageId();
         if (messageId != null) {
-            brokeredMessage.setMessageId(messageId.toString());
+            brokeredProperties.setMessageId(new AmqpMessageId(messageId.toString()));
         }
 
-        brokeredMessage.setContentType(amqpMessage.getContentType());
+        brokeredProperties.setContentType(amqpMessage.getContentType());
         final Object correlationId = amqpMessage.getCorrelationId();
         if (correlationId != null) {
-            brokeredMessage.setCorrelationId(correlationId.toString());
+            brokeredProperties.setCorrelationId(new AmqpMessageId(correlationId.toString()));
         }
 
-        final Properties properties = amqpMessage.getProperties();
-        if (properties != null) {
-            brokeredMessage.setTo(properties.getTo());
+        final Properties amqpProperties = amqpMessage.getProperties();
+        if (amqpProperties != null) {
+            final String to = amqpProperties.getTo();
+            if (to != null) {
+                brokeredProperties.setTo(new AmqpAddress(amqpProperties.getTo()));
+            }
+
+            if (amqpProperties.getAbsoluteExpiryTime() != null) {
+                brokeredProperties.setAbsoluteExpiryTime(amqpProperties.getAbsoluteExpiryTime().toInstant()
+                    .atOffset(ZoneOffset.UTC));
+            }
+            if (amqpProperties.getCreationTime() != null) {
+                brokeredProperties.setCreationTime(amqpProperties.getCreationTime().toInstant()
+                    .atOffset(ZoneOffset.UTC));
+            }
         }
 
-        brokeredMessage.setLabel(amqpMessage.getSubject());
-        brokeredMessage.setReplyTo(amqpMessage.getReplyTo());
-        brokeredMessage.setReplyToSessionId(amqpMessage.getReplyToGroupId());
-        brokeredMessage.setSessionId(amqpMessage.getGroupId());
+        brokeredProperties.setSubject(amqpMessage.getSubject());
+        brokeredProperties.setGroupId(amqpMessage.getGroupId());
+        brokeredProperties.setContentEncoding(amqpMessage.getContentEncoding());
+        brokeredProperties.setGroupSequence(amqpMessage.getGroupSequence());
+        brokeredProperties.setUserId(amqpMessage.getUserId());
+
+        // DeliveryAnnotations
+        final DeliveryAnnotations deliveryAnnotations = amqpMessage.getDeliveryAnnotations();
+        if (deliveryAnnotations != null) {
+            setValues(deliveryAnnotations.getValue(), brokeredAmqpAnnotatedMessage.getDeliveryAnnotations());
+        }
 
         // Message Annotations
         final MessageAnnotations messageAnnotations = amqpMessage.getMessageAnnotations();
         if (messageAnnotations != null) {
-            Map<Symbol, Object> messageAnnotationsMap = messageAnnotations.getValue();
-            if (messageAnnotationsMap != null) {
-                for (Map.Entry<Symbol, Object> entry : messageAnnotationsMap.entrySet()) {
-                    final String key = entry.getKey().toString();
-                    final Object value = entry.getValue();
-
-                    switch (key) {
-                        case ENQUEUED_TIME_UTC_NAME:
-                            brokeredMessage.setEnqueuedTime(((Date) value).toInstant());
-                            break;
-                        case SCHEDULED_ENQUEUE_TIME_NAME:
-                            brokeredMessage.setScheduledEnqueueTime(((Date) value).toInstant());
-                            break;
-                        case SEQUENCE_NUMBER_NAME:
-                            brokeredMessage.setSequenceNumber((long) value);
-                            break;
-                        case LOCKED_UNTIL_NAME:
-                            brokeredMessage.setLockedUntil(((Date) value).toInstant());
-                            break;
-                        case PARTITION_KEY_NAME:
-                            brokeredMessage.setPartitionKey((String) value);
-                            break;
-                        case VIA_PARTITION_KEY_NAME:
-                            brokeredMessage.setViaPartitionKey((String) value);
-                            break;
-                        case DEAD_LETTER_SOURCE_NAME:
-                            brokeredMessage.setDeadLetterSource((String) value);
-                            break;
-                        default:
-                            logger.info("Unrecognised key: {}, value: {}", key, value);
-                            break;
-                    }
-                }
-            }
+            setValues(messageAnnotations.getValue(), brokeredAmqpAnnotatedMessage.getMessageAnnotations());
         }
 
-        // TODO (conniey): Set delivery tag and lock token. .NET does not expose delivery tag. Do we need it?
-
-        // if (deliveryTag != null && deliveryTag.length == LOCK_TOKEN_SIZE) {
-        //     UUID lockToken = Util.convertDotNetBytesToUUID(deliveryTag);
-        //     brokeredMessage.setLockToken(lockToken);
-        // } else {
-        //     brokeredMessage.setLockToken(ZERO_LOCK_TOKEN);
-        // }
-        // brokeredMessage.setDeliveryTag(deliveryTag);
+        if (amqpMessage instanceof MessageWithLockToken) {
+            brokeredMessage.setLockToken(((MessageWithLockToken) amqpMessage).getLockToken());
+        }
 
         return brokeredMessage;
     }
 
-    private static int getPayloadSize(org.apache.qpid.proton.message.Message msg) {
+    private static int getPayloadSize(Message msg) {
         if (msg == null || msg.getBody() == null) {
             return 0;
         }
@@ -310,6 +456,14 @@ class ServiceBusMessageSerializer implements MessageSerializer {
             return sizeof(payloadBytes);
         } else {
             return 0;
+        }
+    }
+
+    private void setValues(Map<Symbol, Object> sourceMap, Map<String, Object> targetMap) {
+        if (sourceMap != null) {
+            for (Map.Entry<Symbol, Object> entry : sourceMap.entrySet()) {
+                targetMap.put(entry.getKey().toString(), entry.getValue());
+            }
         }
     }
 
@@ -429,32 +583,5 @@ class ServiceBusMessageSerializer implements MessageSerializer {
 
         throw new IllegalArgumentException(String.format(Locale.US,
             "Encoding Type: %s is not supported", obj.getClass()));
-    }
-
-    private List<Message> convertAmqpValueMessageToBrokeredMessage(Message amqpResponseMessage) {
-        List<Message> messageList = new ArrayList<>();
-        int statusCode = RequestResponseUtils.getResponseStatusCode(amqpResponseMessage);
-
-        if (statusCode == REQUEST_RESPONSE_OK_STATUS_CODE) {
-            Object responseBodyMap = ((AmqpValue) amqpResponseMessage.getBody()).getValue();
-            if (responseBodyMap != null && responseBodyMap instanceof Map) {
-                Object messages = ((Map) responseBodyMap).get(REQUEST_RESPONSE_MESSAGES);
-                if (messages != null && messages instanceof Iterable) {
-                    for (Object message : (Iterable) messages) {
-                        if (message instanceof Map) {
-                            Message responseMessage = Message.Factory.create();
-                            Binary messagePayLoad = (Binary) ((Map) message)
-                                .get(REQUEST_RESPONSE_MESSAGE);
-                            responseMessage.decode(messagePayLoad.getArray(), messagePayLoad.getArrayOffset(),
-                                messagePayLoad.getLength());
-
-                            messageList.add(responseMessage);
-                        }
-                    }
-                }
-            }
-
-        }
-        return messageList;
     }
 }

@@ -3,7 +3,7 @@
 
 package com.azure.ai.textanalytics;
 
-import com.azure.ai.textanalytics.models.TextAnalyticsApiKeyCredential;
+import com.azure.core.credential.AzureKeyCredential;
 
 import java.util.concurrent.TimeUnit;
 
@@ -19,19 +19,21 @@ public class RecognizeEntitiesAsync {
     public static void main(String[] args) {
         // Instantiate a client that will be used to call the service.
         TextAnalyticsAsyncClient client = new TextAnalyticsClientBuilder()
-            .apiKey(new TextAnalyticsApiKeyCredential("{api_key}"))
+            .credential(new AzureKeyCredential("{key}"))
             .endpoint("{endpoint}")
             .buildAsyncClient();
 
-        // The text that needs be analyzed.
-        String text = "Satya Nadella is the CEO of Microsoft";
+        // The document that needs be analyzed.
+        String document = "Satya Nadella is the CEO of Microsoft";
 
-        client.recognizeEntities(text).subscribe(
-            entity -> System.out.printf(
-                "Recognized categorized entity: %s, entity category: %s, entity sub-category: %s, score: %f.%n",
-                entity.getText(), entity.getCategory(), entity.getSubCategory(), entity.getConfidenceScore()),
+        client.recognizeEntities(document).subscribe(
+            entityCollection -> entityCollection.forEach(entity -> System.out.printf(
+                "Recognized categorized entity: %s, entity category: %s, entity subcategory: %s,"
+                    + " confidence score: %f.%n",
+                entity.getText(), entity.getCategory(), entity.getSubcategory(), entity.getConfidenceScore())),
             error -> System.err.println("There was an error recognizing entities of the text." + error),
-            () -> System.out.println("Entities recognized."));
+            () -> System.out.println("Entities recognized.")
+        );
 
         // The .subscribe() creation and assignment is not a blocking call. For the purpose of this example, we sleep
         // the thread so the program does not end before the send operation is complete. Using .block() instead of

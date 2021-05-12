@@ -3,8 +3,11 @@
 
 package com.azure.cosmos.implementation.directconnectivity;
 
-import org.apache.commons.lang3.StringUtils;
+import com.azure.cosmos.implementation.apachecommons.lang.StringUtils;
+import com.azure.cosmos.implementation.directconnectivity.rntbd.RntbdUtils;
 
+import java.net.URI;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -52,6 +55,10 @@ public class AddressInformation {
         return this.protocol.scheme();
     }
 
+    public URI getServerKey() {
+        return RntbdUtils.getServerKey(this.physicalUri.getURI());
+    }
+
     @Override
     public String toString() {
         return "AddressInformation{" +
@@ -66,7 +73,7 @@ public class AddressInformation {
 
         Objects.requireNonNull(scheme, "scheme");
 
-        switch (scheme.toLowerCase()) {
+        switch (scheme.toLowerCase(Locale.ROOT)) {
             case "https":
                 return Protocol.HTTPS;
             case "rntbd":

@@ -3,10 +3,8 @@
 
 package com.azure.cosmos.implementation;
 
-import com.azure.cosmos.models.JsonSerializable;
-import com.azure.cosmos.models.Resource;
+import com.azure.cosmos.implementation.apachecommons.lang.StringUtils;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.apache.commons.lang3.StringUtils;
 
 /**
  * Represents a Database in the Azure Cosmos DB database service. A database manages users, permissions and a set of collections
